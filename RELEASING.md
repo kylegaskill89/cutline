@@ -11,12 +11,15 @@ and relaunches. Your users never re-download manually after the first install.
    `src-tauri/tauri.conf.json`):
    `https://github.com/kylegaskill89/cutline`
 
-2. **Add two repository secrets** (Settings → Secrets and variables → Actions):
+2. **Add the signing secret** (Settings → Secrets and variables → Actions):
    - `TAURI_SIGNING_PRIVATE_KEY` — the **contents** of `~/.cutline-keys/cutline.key`
      (the private key generated during setup). Paste the whole file.
-   - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` — the key's password. It was generated
-     with an empty password, so set this secret to an empty string (or recreate
-     the key with a password and use that).
+     **(Already set for this repo via `gh secret set`.)**
+
+   The key was generated with **no password**, so the optional
+   `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` secret is not needed — leave it unset (the
+   workflow env var resolves to empty, which matches). If you ever re-create the
+   key *with* a password, add that secret then.
 
    > Keep `~/.cutline-keys/cutline.key` safe and backed up. If it's lost, existing
    > installs can no longer verify updates and you'd have to re-key + re-distribute.
