@@ -1182,19 +1182,20 @@ export class TimelineView {
     }
     for (const t of effectKeyframeTimes(clip)) times.add(Math.round(t * 1000) / 1000);
     if (times.size === 0) return;
+    const r = 5; // diamond radius
     const c = this.ctx;
     c.save();
     c.fillStyle = "#5aa0ff";
-    c.strokeStyle = "rgba(0,0,0,0.6)";
-    c.lineWidth = 1;
+    c.strokeStyle = "rgba(0,0,0,0.7)";
+    c.lineWidth = 1.5;
     for (const t of times) {
       const x = this.timeToX(drawStart + t);
-      if (x < visX - 4 || x > x1 + 4 || x > this.cssW) continue;
+      if (x < visX - r - 1 || x > x1 + r + 1 || x > this.cssW) continue;
       c.beginPath();
-      c.moveTo(x, y - 3);
-      c.lineTo(x + 3, y);
-      c.lineTo(x, y + 3);
-      c.lineTo(x - 3, y);
+      c.moveTo(x, y - r);
+      c.lineTo(x + r, y);
+      c.lineTo(x, y + r);
+      c.lineTo(x - r, y);
       c.closePath();
       c.fill();
       c.stroke();

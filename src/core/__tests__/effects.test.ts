@@ -7,6 +7,7 @@ import {
   defaultColors,
   cssFilterFor,
   ffmpegChainFor,
+  flipFactorsFor,
 } from "../effects.ts";
 import type { ClipEffect } from "../project.ts";
 
@@ -19,6 +20,8 @@ const NEUTRAL: Record<string, Record<string, number>> = {
   hue: { angle: 0 },
   blur: { amount: 0 },
   grayscale: { amount: 0 },
+  invert: { on: 0 },
+  flip: { horizontal: 0, vertical: 0 },
 };
 
 test("every colour/blur effect emits nothing at its neutral params", () => {
@@ -29,6 +32,39 @@ test("every colour/blur effect emits nothing at its neutral params", () => {
     assert.equal(def.css(p, {}), "", `${def.id} css should be neutral`);
     assert.equal(def.ffmpeg(p, {}), "", `${def.id} ffmpeg should be neutral`);
   }
+});
+
+test("invert toggles between negate/invert and nothing", () => {
+  const def = effectDef("invert")!;
+  assert.equal(def.css({ on: 1 }, {}), "invert(1)");
+  assert.equal(def.ffmpeg({ on: 1 }, {}), "negate");
+  assert.equal(def.css({ on: 0 }, {}), "");
+  assert.equal(def.ffmpeg({ on: 0 }, {}), "");
+});
+
+test("flip emits hflip/vflip per axis, no CSS (preview handles it)", () => {
+  const def = effectDef("flip")!;
+  assert.equal(def.css({ horizontal: 1, vertical: 1 }, {}), "");
+  assert.equal(def.ffmpeg({ horizontal: 1, vertical: 0 }, {}), "hflip");
+  assert.equal(def.ffmpeg({ horizontal: 0, vertical: 1 }, {}), "vflip");
+  assert.equal(def.ffmpeg({ horizontal: 1, vertical: 1 }, {}), "hflip,vflip");
+  assert.equal(def.ffmpeg({ horizontal: 0, vertical: 0 }, {}), "");
+});
+
+test("flipFactorsFor mirrors the enabled axes", () => {
+  assert.deepEqual(flipFactorsFor([{ type: "flip", params: { horizontal: 1, vertical: 0 } }]), {
+    sx: -1,
+    sy: 1,
+  });
+  assert.deepEqual(flipFactorsFor([{ type: "flip", params: { horizontal: 0, vertical: 1 } }]), {
+    sx: 1,
+    sy: -1,
+  });
+  // Disabled flip contributes nothing.
+  assert.deepEqual(
+    flipFactorsFor([{ type: "flip", enabled: false, params: { horizontal: 1, vertical: 1 } }]),
+    { sx: 1, sy: 1 },
+  );
 });
 
 test("chroma key: no CSS fragment, ffmpeg chromakey with hex colour", () => {

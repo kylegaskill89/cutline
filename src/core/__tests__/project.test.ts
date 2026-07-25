@@ -134,6 +134,30 @@ test("addClipEffect appends with params; clipEffects reads the stack", () => {
   assert.equal(clipEffects(v2)[0].params.amount, 8);
 });
 
+test("placeMedia sends overlapping audio to fresh lanes (no pile-up)", () => {
+  let p = emptyProject(1, 2); // V1 + A1, A2
+  p = addMedia(p, media);
+  p = placeMedia(p, "m1", 0); // V1 clip + audio on A1/A2 over [0,60]
+  p = addVideoTrack(p);
+  p = addMedia(p, { ...media, id: "m2", path: "b.mp4" });
+  const v2 = p.tracks.find((t) => t.kind === "video" && t.clips.length === 0)!;
+  p = placeMedia(p, "m2", 0, v2.id); // overlaps in time, different video track
+  const audio = p.tracks.filter((t) => t.kind === "audio");
+  assert.equal(audio.length, 4); // A1/A2 kept, A3/A4 created
+  for (const t of audio) assert.equal(t.clips.length, 1); // no lane holds two clips
+});
+
+test("placeMedia reuses audio lanes when there's no time overlap", () => {
+  let p = emptyProject(1, 2);
+  p = addMedia(p, media);
+  p = placeMedia(p, "m1", 0); // [0,60] on A1/A2
+  p = addMedia(p, { ...media, id: "m2", path: "b.mp4" });
+  p = placeMedia(p, "m2", 60); // [60,120] — no overlap, reuse A1/A2
+  const audio = p.tracks.filter((t) => t.kind === "audio");
+  assert.equal(audio.length, 2);
+  for (const t of audio) assert.equal(t.clips.length, 2);
+});
+
 test("setClipEffectParam / toggle / remove mutate immutably", () => {
   let p = loaded();
   const v = p.tracks.find((t) => t.kind === "video")!.clips[0];

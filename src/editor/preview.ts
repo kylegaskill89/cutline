@@ -28,7 +28,7 @@ import {
   type VideoSeg,
   type BlendMode,
 } from "../core/project.ts";
-import { cssFilterFor } from "../core/effects.ts";
+import { cssFilterFor, flipFactorsFor } from "../core/effects.ts";
 import { ChromaKeyer, sourceDims } from "./chromaKey.ts";
 import { layoutText, drawTextCentred } from "./textRender.ts";
 
@@ -64,6 +64,8 @@ interface Src {
    *  current data (e.g. mid-seek during reverse, or just after a cut) so the
    *  preview never flashes black. */
   frame?: HTMLCanvasElement;
+  /** True once we've retried this load without CORS (self-heal, see loadInto). */
+  corsRetried?: boolean;
 }
 
 /** Decoded animated-GIF frames, timed off the timeline playhead (so it scrubs). */
@@ -208,7 +210,13 @@ export class Preview {
     src.mediaId = clip.mediaId;
     src.ready = false;
     src.frame = undefined; // stale frame from a previously-loaded media
+    src.corsRetried = false;
     src.lastUsed = performance.now();
+    // Request the frames CORS-readable so the chroma keyer can sample pixels
+    // (the Tauri asset protocol serves cross-origin). If that makes the load
+    // fail, self-heal by retrying once without CORS — normal playback is then
+    // fine and only pixel-reading effects (chroma key) are unavailable.
+    src.el.crossOrigin = "anonymous";
     src.el.src = assetUrl(media.path);
     const onReady = () => {
       src.ready = true;
@@ -217,9 +225,23 @@ export class Preview {
       } catch {
         /* ignore */
       }
+      cleanup();
+    };
+    const onError = () => {
+      if (!src.corsRetried && src.el.crossOrigin) {
+        src.corsRetried = true;
+        src.el.removeAttribute("crossorigin");
+        src.el.load(); // retry the same src without CORS
+        return;
+      }
+      cleanup();
+    };
+    const cleanup = () => {
       src.el.removeEventListener("loadeddata", onReady);
+      src.el.removeEventListener("error", onError);
     };
     src.el.addEventListener("loadeddata", onReady);
+    src.el.addEventListener("error", onError);
     src.el.load();
   }
 
@@ -434,6 +456,18 @@ export class Preview {
     let img = this.images.get(media.id);
     if (!img) {
       img = new Image();
+      // CORS-readable so the chroma keyer can sample pixels; self-heal to a
+      // plain load if the asset protocol rejects the CORS request.
+      img.crossOrigin = "anonymous";
+      let retried = false;
+      const el = img;
+      el.addEventListener("error", () => {
+        if (!retried && el.crossOrigin) {
+          retried = true;
+          el.removeAttribute("crossorigin");
+          el.src = assetUrl(media.path);
+        }
+      });
       img.src = assetUrl(media.path);
       this.images.set(media.id, img);
     }
@@ -513,11 +547,13 @@ export class Preview {
     c.save();
     c.globalAlpha = this.visualAlpha(seg);
     c.globalCompositeOperation = BLEND_OP[clipBlend(seg.clip)];
-    const filter = cssFilterFor(resolvedEffects(seg.clip, this.playhead - seg.clip.start));
+    const rEffects = resolvedEffects(seg.clip, this.playhead - seg.clip.start);
+    const filter = cssFilterFor(rEffects);
     if (filter) c.filter = filter;
+    const flip = flipFactorsFor(rEffects);
     c.translate(center.x, center.y);
     c.rotate((tr.rotation * Math.PI) / 180);
-    c.scale(s * tr.scaleX, s * tr.scaleY); // canvas px -> css, incl. per-axis scale
+    c.scale(s * tr.scaleX * flip.sx, s * tr.scaleY * flip.sy); // px->css, per-axis scale, flip
     drawTextCentred(c, media.text, layout);
     c.restore();
   }
@@ -554,6 +590,8 @@ export class Preview {
     if (filter) c.filter = filter;
     c.translate(g.center.x, g.center.y);
     c.rotate(g.rad);
+    const flip = flipFactorsFor(rEffects);
+    if (flip.sx !== 1 || flip.sy !== 1) c.scale(flip.sx, flip.sy);
     try {
       c.drawImage(draw, -g.wCss / 2, -g.hCss / 2, g.wCss, g.hCss);
     } catch {

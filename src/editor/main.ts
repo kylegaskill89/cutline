@@ -1214,6 +1214,27 @@ function renderEffectList(clipId: string) {
     }
 
     for (const p of def.params) {
+      // Toggle params render as a checkbox (no stopwatch, no slider).
+      if (p.kind === "toggle") {
+        const row = document.createElement("label");
+        row.className = "fx-param fx-toggle";
+        const label = document.createElement("span");
+        label.className = "pf-label";
+        label.textContent = p.label;
+        const box = document.createElement("input");
+        box.type = "checkbox";
+        box.checked = (inst.params[p.key] ?? p.def) >= 0.5;
+        box.addEventListener("change", () => {
+          pushHistory();
+          project = setClipEffectParam(project, clipId, index, p.key, box.checked ? 1 : 0);
+          preview.project = project;
+          preview.render();
+        });
+        row.append(label, box);
+        card.appendChild(row);
+        continue;
+      }
+
       const row = document.createElement("label");
       row.className = "fx-param";
       // Per-param stopwatch (animate this parameter over time).

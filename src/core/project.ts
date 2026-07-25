@@ -862,9 +862,22 @@ export function placeMedia(
     sortTrack(targetVideo);
   }
 
+  // Place each audio stream on an audio lane that's FREE over the clip's span,
+  // using a distinct lane per stream and creating fresh lanes at the bottom when
+  // none are free — so a clip dropped onto a second video track doesn't pile its
+  // audio on top of another layer's audio.
+  const audioEnd = start + (sOut - sIn);
+  const laneFree = (t: Track) =>
+    !t.clips.some((c) => start < clipEnd(c) && c.start < audioEnd);
+  const usedLanes = new Set<string>();
   for (let s = 0; s < media.audioStreamCount; s++) {
-    const track = audioTracks[s];
-    if (!track) break; // not enough audio tracks; caller should add them first
+    let track = audioTracks.find((t) => !usedLanes.has(t.id) && laneFree(t));
+    if (!track) {
+      track = { id: newId("track"), kind: "audio", clips: [] };
+      next.tracks.push(track);
+      audioTracks.push(track);
+    }
+    usedLanes.add(track.id);
     track.clips.push({
       id: newId("clip"),
       mediaId,

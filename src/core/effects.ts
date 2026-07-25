@@ -25,6 +25,9 @@ export interface EffectParam {
   def: number;
   step: number;
   unit?: string;
+  /** "slider" (default) shows a range+number; "toggle" shows a checkbox (0/1)
+   *  and is not keyframeable. */
+  kind?: "slider" | "toggle";
 }
 
 /** A colour (hex) parameter — not keyframeable, edited with a colour picker. */
@@ -132,6 +135,30 @@ export const EFFECTS: EffectDef[] = [
     },
   },
   {
+    id: "invert",
+    label: "Invert",
+    params: [{ key: "on", label: "Invert colors", min: 0, max: 1, def: 1, step: 1, kind: "toggle" }],
+    css: (p) => (getP(p, "on", 1) >= 0.5 ? "invert(1)" : ""),
+    ffmpeg: (p) => (getP(p, "on", 1) >= 0.5 ? "negate" : ""),
+  },
+  {
+    // Flip is not a CSS filter — the preview mirrors via ctx.scale (see
+    // flipFactorsFor); export uses ffmpeg hflip/vflip. Exact in both.
+    id: "flip",
+    label: "Flip",
+    params: [
+      { key: "horizontal", label: "Horizontal", min: 0, max: 1, def: 1, step: 1, kind: "toggle" },
+      { key: "vertical", label: "Vertical", min: 0, max: 1, def: 0, step: 1, kind: "toggle" },
+    ],
+    css: () => "",
+    ffmpeg: (p) => {
+      const parts: string[] = [];
+      if (getP(p, "horizontal", 0) >= 0.5) parts.push("hflip");
+      if (getP(p, "vertical", 0) >= 0.5) parts.push("vflip");
+      return parts.join(",");
+    },
+  },
+  {
     // Chroma key (green screen): not a CSS filter — the preview keys it on an
     // offscreen canvas, and export uses ffmpeg's `chromakey`. `css` returns ""
     // so it never contributes to the ctx.filter string.
@@ -207,4 +234,21 @@ export function ffmpegChainFor(effects: ClipEffect[] | undefined): string {
     if (frag) parts.push(frag);
   }
   return parts.join(",");
+}
+
+/**
+ * Horizontal/vertical mirror factors (±1) contributed by enabled Flip effects.
+ * The preview compositor applies these with ctx.scale (ffmpeg uses hflip/vflip),
+ * keeping flips exact in both.
+ */
+export function flipFactorsFor(effects: ClipEffect[] | undefined): { sx: number; sy: number } {
+  let sx = 1;
+  let sy = 1;
+  if (!effects) return { sx, sy };
+  for (const e of enabled(effects)) {
+    if (e.type !== "flip") continue;
+    if ((e.params.horizontal ?? 0) >= 0.5) sx = -sx;
+    if ((e.params.vertical ?? 0) >= 0.5) sy = -sy;
+  }
+  return { sx, sy };
 }
