@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cutline</title>
+    <link rel="stylesheet" href="/src/editor/editor.css" />
+  </head>
+  <body>
+    <div id="editor">
+      <div class="toolbar">
+        <button id="openBtn" class="btn">Open</button>
+        <button id="saveBtn" class="btn">Save</button>
+        <span class="divider"></span>
+        <button id="importBtn" class="btn">Import Media</button>
+        <span class="divider"></span>
+        <button id="exportBtn" class="btn" disabled>Export</button>
+        <span class="divider"></span>
+        <button id="addTextBtn" class="btn">Add Text</button>
+        <span class="spacer"></span>
+        <span id="projInfo" class="proj-info">No media</span>
+        <span class="spacer"></span>
+        <button id="updateBtn" class="btn" title="Check for updates">Check for Updates</button>
+        <button id="maximizeBtn" class="btn">Maximize Video</button>
+      </div>
+
+      <div class="top-row" id="topRow">
+        <section class="panel media-pool" id="mediaPool">
+          <div class="panel-title">Project</div>
+          <div id="mediaList" class="media-list">
+            <p class="empty-hint">Import videos to build your timeline.</p>
+          </div>
+        </section>
+
+        <div class="splitter v-split" id="splitTopH"></div>
+
+        <section class="panel preview" id="previewPanel">
+          <div class="panel-title">Program</div>
+          <div class="preview-body">
+            <div id="propsPanel" class="props-panel hidden">
+              <div class="props-head">
+                <span class="props-title">Effect Controls</span>
+                <button id="prReset" class="btn small" title="Reset transform">Reset</button>
+              </div>
+              <div class="props-scroll">
+                <div class="fx-group">
+                  <div class="fx-group-head">Motion</div>
+                  <label class="props-field"><button class="kf" data-prop="x" title="Animate X">◆</button><span class="pf-label">Position X</span><input id="prX" type="number" step="1" /><span class="unit">%</span></label>
+                  <label class="props-field"><button class="kf" data-prop="y" title="Animate Y">◆</button><span class="pf-label">Position Y</span><input id="prY" type="number" step="1" /><span class="unit">%</span></label>
+                  <label class="props-field"><button class="kf" data-prop="scaleX" title="Animate Scale X">◆</button><span class="pf-label">Scale X</span><input id="prScaleX" type="number" step="1" /><span class="unit">%</span></label>
+                  <label class="props-field"><button class="kf" data-prop="scaleY" title="Animate Scale Y">◆</button><span class="pf-label">Scale Y</span><input id="prScaleY" type="number" step="1" /><span class="unit">%</span></label>
+                  <div class="props-field"><span class="pf-label">Aspect</span><button id="prLinkScale" class="tool active" title="Lock aspect ratio">Lock ratio</button></div>
+                  <label class="props-field"><button class="kf" data-prop="rotation" title="Animate Rotation">◆</button><span class="pf-label">Rotation</span><input id="prRot" type="number" step="1" /><span class="unit">°</span></label>
+                  <label class="props-field"><button class="kf" data-prop="opacity" title="Animate Opacity">◆</button><span class="pf-label">Opacity</span><input id="prOpacity" type="number" step="1" min="0" max="100" /><span class="unit">%</span></label>
+                </div>
+                <div class="fx-group">
+                  <div class="fx-group-head">Time Remapping</div>
+                  <label class="props-field"><span class="pf-label">Speed</span><input id="prSpeed" type="number" step="5" min="5" max="10000" /><span class="unit">%</span></label>
+                  <div class="props-field"><span class="pf-label">Direction</span><button id="prReverse" class="tool" title="Play the clip backwards">Reverse</button></div>
+                </div>
+                <div class="fx-group">
+                  <div class="fx-group-head">Composite</div>
+                  <label class="props-field"><span class="pf-label">Blend</span>
+                    <select id="prBlend">
+                      <option value="normal">Normal</option>
+                      <option value="add">Add</option>
+                      <option value="screen">Screen</option>
+                      <option value="multiply">Multiply</option>
+                      <option value="overlay">Overlay</option>
+                      <option value="darken">Darken</option>
+                      <option value="lighten">Lighten</option>
+                      <option value="difference">Difference</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="fx-group">
+                  <div class="fx-group-head">Effects
+                    <select id="fxAdd" class="fx-add" title="Add an effect">
+                      <option value="">+ Add effect…</option>
+                    </select>
+                  </div>
+                  <div id="fxList" class="fx-list"></div>
+                </div>
+              </div>
+            </div>
+            <div id="textPanel" class="props-panel hidden">
+              <div class="props-head">
+                <span class="props-title">Text</span>
+              </div>
+              <div class="props-scroll">
+                <div class="fx-group">
+                  <input id="txtContent" class="txt-content" type="text" placeholder="Enter text" />
+                  <label class="props-field"><span class="pf-label">Size</span><input id="txtSize" type="number" step="1" min="4" /></label>
+                  <label class="props-field"><span class="pf-label">Color</span><input id="txtColor" type="color" /></label>
+                  <label class="props-field"><span class="pf-label">Font</span>
+                    <select id="txtFont">
+                      <option value="system-ui, sans-serif">Sans</option>
+                      <option value="Georgia, serif">Serif</option>
+                      <option value="'Courier New', monospace">Mono</option>
+                      <option value="Impact, sans-serif">Impact</option>
+                      <option value="'Trebuchet MS', sans-serif">Trebuchet</option>
+                    </select>
+                  </label>
+                  <div class="props-field"><span class="pf-label">Style</span><button id="txtBold" class="tool" title="Bold">B</button><button id="txtItalic" class="tool" title="Italic">I</button></div>
+                  <label class="props-field"><span class="pf-label">Align</span>
+                    <select id="txtAlign">
+                      <option value="left">Left</option>
+                      <option value="center">Center</option>
+                      <option value="right">Right</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="fx-group">
+                  <div class="fx-group-head">Background</div>
+                  <label class="props-field"><span class="pf-label">Color</span><input id="txtBg" type="color" /></label>
+                  <div class="props-field"><span class="pf-label"></span><button id="txtBgClear" class="btn small">No BG</button></div>
+                </div>
+                <div class="fx-group">
+                  <div class="fx-group-head">Outline &amp; Shadow</div>
+                  <label class="props-field"><span class="pf-label">Outline</span><input id="txtStroke" type="color" /></label>
+                  <label class="props-field"><span class="pf-label">Width</span><input id="txtStrokeW" type="number" step="1" min="0" max="40" /><span class="unit">px</span></label>
+                  <div class="props-field"><span class="pf-label"></span><button id="txtStrokeClear" class="btn small">No Outline</button><button id="txtShadow" class="tool" title="Drop shadow">Shadow</button></div>
+                </div>
+              </div>
+            </div>
+            <div class="video-wrap">
+              <canvas id="previewCanvas"></canvas>
+              <div id="videoSources" class="video-sources"></div>
+            </div>
+          </div>
+          <div class="transport">
+            <button id="playBtn" class="btn" disabled>Play</button>
+            <button id="loopBtn" class="tool" title="Loop playback (loops the In/Out range if set)">Loop</button>
+            <label class="canvas-ctl">Canvas
+              <select id="canvasPreset">
+                <option value="1920x1080">1080p · 16:9</option>
+                <option value="2560x1440">1440p · 16:9</option>
+                <option value="3840x2160">4K · 16:9</option>
+                <option value="3440x1440">Ultrawide 1440p · 21:9</option>
+                <option value="2560x1080">Ultrawide 1080p · 21:9</option>
+                <option value="1080x1920">Vertical · 9:16</option>
+                <option value="1080x1080">Square · 1:1</option>
+                <option value="custom">Custom</option>
+              </select>
+              <input id="canvasW" type="number" class="canvas-dim" min="16" step="2" />
+              <span class="unit">×</span>
+              <input id="canvasH" type="number" class="canvas-dim" min="16" step="2" />
+            </label>
+            <span id="tc" class="timecode">00:00:00.00</span>
+            <div class="meter" title="Output level"><div id="meterFill" class="meter-fill"></div></div>
+            <label class="vol">Volume
+              <input id="vol" type="range" min="0" max="100" value="80" />
+            </label>
+          </div>
+        </section>
+      </div>
+
+      <div class="splitter h-split" id="splitMid"></div>
+
+      <section class="panel timeline-panel" id="timelinePanel">
+        <div class="tl-toolbar">
+          <span class="panel-tag">Sequence</span>
+          <span class="tl-divider"></span>
+          <button class="tool active" data-tool="select" title="Selection tool (V)">Select</button>
+          <button class="tool" data-tool="razor" title="Razor tool (C)">Razor</button>
+          <button class="tool" data-tool="rate" title="Rate Stretch tool (R) — drag a clip edge to change speed">Rate</button>
+          <button class="tool" data-tool="slip" title="Slip tool (Y) — drag a clip body to slip its source">Slip</button>
+          <button class="tool" data-tool="slide" title="Slide tool (U) — drag a clip to slide it between neighbours">Slide</button>
+          <button id="snapBtn" class="tool active" title="Toggle snapping (S)">Snap</button>
+          <span class="tl-divider"></span>
+          <button id="markInBtn" class="btn small" title="Mark In (I)">In</button>
+          <button id="markOutBtn" class="btn small" title="Mark Out (O)">Out</button>
+          <button id="clearInOutBtn" class="btn small" title="Clear In/Out">Clear</button>
+          <button id="markerBtn" class="btn small" title="Add marker (M)">Marker</button>
+          <span class="tl-divider"></span>
+          <button id="linkBtn" class="btn small" disabled>Link</button>
+          <button id="unlinkBtn" class="btn small" disabled>Unlink</button>
+          <span class="tl-divider"></span>
+          <button id="addVideoTrackBtn" class="btn small">+ Video Track</button>
+          <button id="addAudioTrackBtn" class="btn small">+ Audio Track</button>
+          <span class="spacer"></span>
+          <button id="zoomFit" class="btn small">Fit</button>
+        </div>
+        <div class="tl-canvas-wrap" id="tlCanvasWrap">
+          <canvas id="timelineCanvas"></canvas>
+        </div>
+      </section>
+
+      <div id="exportModal" class="modal-overlay hidden">
+        <div class="modal">
+          <div class="modal-title">Export Video</div>
+          <div class="modal-body">
+            <label class="field">Resolution
+              <select id="expResolution">
+                <option value="canvas" selected>Match canvas</option>
+                <option value="3840x2160">2160p (4K)</option>
+                <option value="1920x1080">1080p</option>
+                <option value="1280x720">720p</option>
+                <option value="854x480">480p</option>
+              </select>
+            </label>
+            <label class="field">Frame rate
+              <select id="expFps">
+                <option value="source" selected>Match source</option>
+                <option value="24">24</option>
+                <option value="30">30</option>
+                <option value="60">60</option>
+              </select>
+            </label>
+            <label class="field">Codec
+              <select id="expCodec">
+                <option value="h264" selected>H.264 (most compatible)</option>
+                <option value="h265">H.265 (smaller files)</option>
+              </select>
+            </label>
+            <label class="field">Quality
+              <select id="expQuality">
+                <option value="high">High</option>
+                <option value="balanced" selected>Balanced</option>
+                <option value="small">Small file</option>
+              </select>
+            </label>
+            <label class="field">Audio
+              <select id="expAudio">
+                <option value="mix" selected>Mix to one track</option>
+                <option value="separate">Keep separate tracks</option>
+              </select>
+            </label>
+            <div id="expSummary" class="modal-summary"></div>
+          </div>
+          <div class="modal-actions">
+            <button id="expCancel" class="btn">Cancel</button>
+            <button id="expConfirm" class="btn primary">Export…</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="exportProgress" class="modal-overlay hidden">
+        <div class="modal">
+          <div class="modal-title">Exporting…</div>
+          <div class="modal-body">
+            <div id="expProgStatus" class="export-status">Preparing…</div>
+            <div class="export-bar">
+              <div id="expProgFill" class="export-bar-fill indeterminate"></div>
+            </div>
+            <div id="expProgPct" class="export-pct"></div>
+          </div>
+          <div class="modal-actions">
+            <button id="expProgCancel" class="btn">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="sourceModal" class="modal-overlay hidden">
+        <div class="modal source-modal">
+          <div class="modal-title">Source — <span id="srcName"></span></div>
+          <div class="source-view">
+            <video id="srcVideo" controls></video>
+            <img id="srcImage" alt="source" hidden />
+          </div>
+          <div id="srcRange" class="modal-summary"></div>
+          <div class="modal-actions">
+            <button id="srcMarkIn" class="btn small" title="Mark In (I)">Mark In</button>
+            <button id="srcMarkOut" class="btn small" title="Mark Out (O)">Mark Out</button>
+            <button id="srcClearRange" class="btn small">Clear</button>
+            <span class="spacer"></span>
+            <button id="srcInsert" class="btn" title="Insert at playhead (,)">Insert</button>
+            <button id="srcOverwrite" class="btn" title="Overwrite at playhead (.)">Overwrite</button>
+            <button id="srcAppend" class="btn primary">Append</button>
+            <button id="srcClose" class="btn">Close</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="ctxMenu" class="ctx-menu hidden"></div>
+    </div>
+    <script type="module" src="/src/editor/main.ts"></script>
+  </body>
+</html>

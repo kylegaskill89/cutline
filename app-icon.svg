@@ -1,0 +1,32 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5b57f0"/>
+      <stop offset="1" stop-color="#8b3df0"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.16"/>
+      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- App tile -->
+  <rect x="0" y="0" width="1024" height="1024" rx="232" fill="url(#tile)"/>
+  <rect x="0" y="0" width="1024" height="1024" rx="232" fill="url(#sheen)"/>
+
+  <!-- The "cut line": a dashed guide the scissors is trimming -->
+  <line x1="560" y1="512" x2="936" y2="512" stroke="#ffd166" stroke-width="24"
+        stroke-linecap="round" stroke-dasharray="4 58"/>
+
+  <!-- Scissors: two finger loops with blades crossing at the pivot, opening right -->
+  <g fill="none" stroke="#ffffff" stroke-width="40" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="258" cy="404" r="74"/>
+    <circle cx="258" cy="620" r="74"/>
+    <path d="M320 440 L742 596"/>
+    <path d="M320 584 L742 428"/>
+  </g>
+
+  <!-- pivot screw where the blades cross -->
+  <circle cx="531" cy="512" r="30" fill="#ffffff"/>
+  <circle cx="531" cy="512" r="12" fill="#6a48e6"/>
+</svg>

@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+src-tauri/target/
+
+# Tauri generated schemas (regenerated on build)
+src-tauri/gen/schemas/
+
+# Bundled ffmpeg/ffprobe sidecars — too large for git; CI downloads them,
+# and locally they live here but are never committed.
+src-tauri/binaries/*.exe
+src-tauri/binaries/ffmpeg*
+src-tauri/binaries/ffprobe*
+
+# Update-signing keys must never be committed (kept in ~/.cutline-keys).
+*.key
+*.key.pub
+
+# Editor / OS cruft
+.DS_Store
+Thumbs.db
+.vscode/

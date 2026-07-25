@@ -1,0 +1,26 @@
+{
+  "name": "cutline",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --import tsx --test src/core/__tests__/ffmpeg.test.ts src/core/__tests__/format.test.ts src/core/__tests__/probe.test.ts src/core/__tests__/project.test.ts src/core/__tests__/waveform.test.ts src/core/__tests__/export.test.ts src/core/__tests__/effects.test.ts",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vite": "^6.4.3"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-dialog": "^2.7.2",
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-shell": "^2.3.5",
+    "@tauri-apps/plugin-updater": "^2.10.1"
+  }
+}
