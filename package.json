@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --import tsx --test src/core/__tests__/ffmpeg.test.ts src/core/__tests__/format.test.ts src/core/__tests__/probe.test.ts src/core/__tests__/project.test.ts src/core/__tests__/waveform.test.ts src/core/__tests__/export.test.ts src/core/__tests__/effects.test.ts",
+    "test": "node --import tsx --test src/core/__tests__/ffmpeg.test.ts src/core/__tests__/format.test.ts src/core/__tests__/probe.test.ts src/core/__tests__/project.test.ts src/core/__tests__/waveform.test.ts src/core/__tests__/export.test.ts src/core/__tests__/effects.test.ts src/core/__tests__/scopes.test.ts",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",

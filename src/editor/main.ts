@@ -109,6 +109,8 @@ import { matteFill } from "./matteRender.ts";
 import { TimelineView, type Tool } from "./timelineView.ts";
 import { AudioEngine } from "./audioEngine.ts";
 import { Preview } from "./preview.ts";
+import { ScopeView } from "./scopes.ts";
+import type { ScopeMode } from "../core/scopes.ts";
 
 const audio = new AudioEngine();
 
@@ -571,6 +573,34 @@ const preview = new Preview(previewCanvas, videoSources, {
 });
 preview.project = project;
 
+// -------------------------------------------------------------- scopes --
+// Analysis-only overlay: samples the program monitor each frame. Never touches
+// the model or export, so it can't affect rendered video.
+const scopePanel = $<HTMLDivElement>("scopePanel");
+const scopeCanvas = $<HTMLCanvasElement>("scopeCanvas");
+const scopeBtn = $<HTMLButtonElement>("scopeBtn");
+const scope = new ScopeView(scopeCanvas);
+scopeBtn.addEventListener("click", () => {
+  scope.enabled = !scope.enabled;
+  scopeBtn.classList.toggle("active", scope.enabled);
+  scopePanel.classList.toggle("hidden", !scope.enabled);
+  if (scope.enabled) scope.resize();
+});
+for (const tab of Array.from(document.querySelectorAll<HTMLButtonElement>(".scope-tab"))) {
+  tab.addEventListener("click", () => {
+    scope.mode = tab.dataset.scope as ScopeMode;
+    for (const t of Array.from(document.querySelectorAll(".scope-tab"))) {
+      t.classList.toggle("active", t === tab);
+    }
+  });
+}
+/** Feed the current program frame into the active scope (call after render). */
+function updateScope() {
+  if (!scope.enabled) return;
+  const r = preview.outputDeviceRect();
+  if (r) scope.update(previewCanvas, r.sx, r.sy, r.sw, r.sh);
+}
+
 function seek(t: number) {
   shuttleRate = 0; // any manual seek cancels J/K/L shuttling
   playhead = snapToFrame(Math.max(0, t), projectFps); // playhead always on a frame
@@ -742,6 +772,7 @@ function tick() {
   preview.project = project; // keep the preview on the latest project each frame
   preview.playhead = playhead;
   preview.render(); // composite every frame (shows seeked frames while paused too)
+  updateScope();
   updateMeter();
   requestAnimationFrame(tick);
 }

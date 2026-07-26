@@ -224,6 +224,48 @@ body {
   height: 100%;
   display: block;
 }
+/* Video scopes overlay (top-right of the program monitor). Analysis only. */
+.scope-panel {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 264px;
+  background: rgba(8, 10, 13, 0.82);
+  border: 1px solid var(--border, #2b313a);
+  border-radius: 6px;
+  overflow: hidden;
+  z-index: 5;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+.scope-panel.hidden {
+  display: none;
+}
+.scope-tabs {
+  display: flex;
+  gap: 1px;
+  background: rgba(255, 255, 255, 0.06);
+}
+.scope-tab {
+  flex: 1 1 auto;
+  padding: 4px 2px;
+  font-size: 10px;
+  color: #c7ced6;
+  background: #14181d;
+  border: none;
+  cursor: pointer;
+}
+.scope-tab:hover {
+  background: #1b2027;
+}
+.scope-tab.active {
+  background: #2a3542;
+  color: #fff;
+}
+.scope-panel #scopeCanvas {
+  display: block;
+  width: 264px;
+  height: 176px;
+}
 /* Hidden pool of <video> frame sources (kept in DOM so they decode). */
 .video-sources {
   position: absolute;

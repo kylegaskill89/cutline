@@ -441,6 +441,22 @@ export class Preview {
   private overlaysHidden = false;
 
   /**
+   * The composited output region within `this.canvas`, in device pixels — the
+   * letterboxed program image without the pasteboard/handles. Scopes sample this
+   * rect each frame. Returns null before the first layout.
+   */
+  outputDeviceRect(): { sx: number; sy: number; sw: number; sh: number } | null {
+    if (this.cssW <= 0) return null;
+    const dpr = this.canvas.width / Math.max(1, this.cssW);
+    const s = this.displayScale();
+    const { ox, oy } = this.offset();
+    const sw = Math.round(this.canvasW * s * dpr);
+    const sh = Math.round(this.canvasH * s * dpr);
+    if (sw <= 0 || sh <= 0) return null;
+    return { sx: Math.round(ox * dpr), sy: Math.round(oy * dpr), sw, sh };
+  }
+
+  /**
    * Renders one clean frame (no selection handles/guides) and returns just the
    * canvas (output) region as an offscreen canvas at device resolution — used to
    * save a snapshot of the current frame.

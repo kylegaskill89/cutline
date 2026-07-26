@@ -152,11 +152,21 @@
             <div class="video-wrap">
               <canvas id="previewCanvas"></canvas>
               <div id="videoSources" class="video-sources"></div>
+              <div id="scopePanel" class="scope-panel hidden">
+                <div class="scope-tabs">
+                  <button class="scope-tab active" data-scope="histogram">Histogram</button>
+                  <button class="scope-tab" data-scope="waveform">Waveform</button>
+                  <button class="scope-tab" data-scope="parade">Parade</button>
+                  <button class="scope-tab" data-scope="vectorscope">Vector</button>
+                </div>
+                <canvas id="scopeCanvas"></canvas>
+              </div>
             </div>
           </div>
           <div class="transport">
             <button id="playBtn" class="btn" disabled>Play</button>
             <button id="loopBtn" class="tool" title="Loop playback (loops the In/Out range if set)">Loop</button>
+            <button id="scopeBtn" class="tool" title="Show video scopes (histogram / waveform / vectorscope)">Scopes</button>
             <label class="canvas-ctl">Canvas
               <select id="canvasPreset">
                 <option value="1920x1080">1080p · 16:9</option>
