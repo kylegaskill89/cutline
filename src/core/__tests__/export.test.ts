@@ -128,6 +128,17 @@ test("animated effect params force the overlay path and bake per-slice values", 
   assert.match(g, /eq=brightness=0\.\d+/);
 });
 
+test("push transition bakes sliding overlay slices (no concat)", () => {
+  let p = loaded();
+  const vt = p.tracks.find((t) => t.kind === "video")!;
+  p = splitAt(p, 10, [vt.clips[0].id]); // A[0..10], B[10..60] on one track
+  const a = p.tracks.find((t) => t.kind === "video")!.clips.find((c) => c.start === 0)!;
+  p = setClipTransition(p, a.id, { kind: "push", duration: 2 });
+  const g = graphOf(compileExport(p, opts));
+  assert.doesNotMatch(g, /concat=/); // forced onto the overlay compositor
+  assert.match(g, /overlay=/); // baked slices overlaid
+});
+
 test("gain keyframes emit a per-frame volume automation expression", () => {
   let p = loaded();
   const a = p.tracks.find((t) => t.kind === "audio")!.clips[0];

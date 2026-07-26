@@ -20,6 +20,7 @@ import {
   animatedOpacity,
   resolvedEffects,
   isStillLike,
+  segSlideOffsetX,
   sourceTimeAt,
   resolveVideoSegments,
   type Project,
@@ -582,6 +583,7 @@ export class Preview {
     const tr = this.effTransform(seg.clip);
     const s = this.displayScale();
     const center = this.projToCss(tr.x * this.canvasW, tr.y * this.canvasH);
+    center.x += this.slideDx(seg);
     const layout = layoutText(this.ctx, media.text);
     const c = this.ctx;
     c.save();
@@ -601,6 +603,7 @@ export class Preview {
   /** Renders a colour-matte clip: fills its transformed rect with the matte colour. */
   private drawColorClip(seg: VideoSeg, media: Media) {
     const g = this.clipGeometry(seg.clip);
+    g.center.x += this.slideDx(seg);
     const c = this.ctx;
     c.save();
     c.globalAlpha = this.visualAlpha(seg);
@@ -631,9 +634,16 @@ export class Preview {
     return a;
   }
 
+  /** Extra css-x offset from a push/slide transition at the current playhead. */
+  private slideDx(seg: VideoSeg): number {
+    const off = segSlideOffsetX(seg, this.playhead);
+    return off === 0 ? 0 : off * this.canvasW * this.displayScale();
+  }
+
   /** Draws any image source (video frame or still) with the clip's transform. */
   private drawTransformed(seg: VideoSeg, source: CanvasImageSource) {
     const g = this.clipGeometry(seg.clip);
+    g.center.x += this.slideDx(seg);
     const c = this.ctx;
     const rEffects = resolvedEffects(seg.clip, this.playhead - seg.clip.start);
     // Chroma key (if present) punches out the key colour on an offscreen buffer;

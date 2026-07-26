@@ -29,6 +29,7 @@ import {
   sourceTimeAt,
   setClipTransition,
   resolveVideoSegments,
+  segSlideOffsetX,
   setClipBlend,
   clipBlend,
   addMarker,
@@ -411,6 +412,38 @@ test("cross-dissolve resolves into an overlap by borrowing source handles", () =
   assert.equal(segs[1].start, 9);
   assert.equal(segs[1].sourceIn, 9);
   assert.equal(segs[1].xIn, 2);
+});
+
+test("push transition slides both clips (in from right, out to left)", () => {
+  let p = loaded();
+  const vtrack = p.tracks.find((t) => t.kind === "video")!;
+  p = splitAt(p, 10, groupMembers(p, vtrack.clips[0].id));
+  const A = p.tracks.find((t) => t.kind === "video")!.clips.find((c) => c.start === 0)!;
+  p = setClipTransition(p, A.id, { kind: "push", duration: 2 });
+  const vt = p.tracks.find((t) => t.kind === "video")!;
+  const segs = resolveVideoSegments(vt, (id) => (id === "m1" ? 60 : Infinity)).sort(
+    (a, b) => a.start - b.start,
+  );
+  assert.equal(segs[1].xIn, 0); // geometric, not alpha
+  assert.equal(segs[1].slideRole, "in");
+  assert.equal(segSlideOffsetX(segs[1], 9), 1); // off right at window start
+  assert.equal(segSlideOffsetX(segs[1], 11), 0); // centred at end
+  assert.equal(segs[0].slideRole, "out"); // A pushes left
+  assert.equal(segSlideOffsetX(segs[0], 11), -1);
+});
+
+test("slide transition moves only the incoming clip", () => {
+  let p = loaded();
+  const vtrack = p.tracks.find((t) => t.kind === "video")!;
+  p = splitAt(p, 10, groupMembers(p, vtrack.clips[0].id));
+  const A = p.tracks.find((t) => t.kind === "video")!.clips.find((c) => c.start === 0)!;
+  p = setClipTransition(p, A.id, { kind: "slide", duration: 2 });
+  const vt = p.tracks.find((t) => t.kind === "video")!;
+  const segs = resolveVideoSegments(vt, (id) => (id === "m1" ? 60 : Infinity)).sort(
+    (a, b) => a.start - b.start,
+  );
+  assert.equal(segs[1].slideRole, "in");
+  assert.equal(segs[0].slideKind, undefined); // A stays put under B
 });
 
 test("dip to black adds opaque fades at the cut with no overlap", () => {

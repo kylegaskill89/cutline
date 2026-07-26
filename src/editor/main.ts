@@ -2435,6 +2435,8 @@ function transitionMenuItems(clip: Clip, atTime: number): CtxItem[] {
   const items: CtxItem[] = [
     { label: "Cross dissolve", action: () => applyTransition(owner.id, "dissolve", dur) },
     { label: "Dip to black", action: () => applyTransition(owner.id, "dip-black", dur) },
+    { label: "Push", action: () => applyTransition(owner.id, "push", dur) },
+    { label: "Slide", action: () => applyTransition(owner.id, "slide", dur) },
   ];
   if (has) items.push({ label: "Remove transition", action: () => applyTransition(owner.id, null, 0) });
   return items;

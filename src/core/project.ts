@@ -485,7 +485,7 @@ export function clipEnabled(c: Clip): boolean {
 }
 
 /** A transition between this clip and the next abutting clip on its track. */
-export type TransitionKind = "dissolve" | "dip-black";
+export type TransitionKind = "dissolve" | "dip-black" | "push" | "slide";
 export interface Transition {
   kind: TransitionKind;
   /** Total transition duration in seconds, centred on the cut. */
@@ -781,6 +781,24 @@ export interface VideoSeg {
   fixedOpacity?: number; // when set, fades are already folded in (skip fade filter)
   /** Export keyframe baking: the effect stack with animated params resolved. */
   fixedEffects?: ClipEffect[];
+  /** Geometric transition (push/slide): an x-offset ramp over [win.start,win.end].
+   *  `role` "in" = incoming clip slides from the right; "out" = outgoing pushes left. */
+  slideKind?: "push" | "slide";
+  slideRole?: "in" | "out";
+  slideWin?: { start: number; end: number };
+}
+
+/** The x-offset (fraction of canvas width) added to a segment's position at time
+ *  `t` for a push/slide transition. 0 outside the transition window. */
+export function segSlideOffsetX(seg: VideoSeg, t: number): number {
+  if (!seg.slideKind || !seg.slideWin) return 0;
+  const { start, end } = seg.slideWin;
+  const span = end - start;
+  if (span <= 0) return 0;
+  const p = Math.max(0, Math.min(1, (t - start) / span));
+  if (seg.slideRole === "in") return (1 - p) * 1; // +1 (off right) → 0 (centred)
+  if (seg.slideRole === "out") return p * -1; // 0 → -1 (off left)
+  return 0;
 }
 
 /** Public: the source [in,out] a clip shows during timeline sub-window [a,b]. */
@@ -844,7 +862,20 @@ export function resolveVideoSegments(
     segB.start -= bExt;
     if (clipReversed(b)) segB.sourceOut += bExt * spdB;
     else segB.sourceIn -= bExt * spdB;
-    segB.xIn = Math.max(segB.xIn, overlap);
+    if (t.kind === "push" || t.kind === "slide") {
+      // Geometric: B slides in over the overlap; push also slides A out.
+      const win = { start: segB.start, end: segA.end };
+      segB.slideKind = t.kind;
+      segB.slideRole = "in";
+      segB.slideWin = win;
+      if (t.kind === "push") {
+        segA.slideKind = t.kind;
+        segA.slideRole = "out";
+        segA.slideWin = win;
+      }
+    } else {
+      segB.xIn = Math.max(segB.xIn, overlap); // cross-dissolve (alpha)
+    }
   }
   return segs;
 }

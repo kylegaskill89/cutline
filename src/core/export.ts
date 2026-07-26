@@ -31,6 +31,7 @@ import {
   clipSubSource,
   animatedTransform,
   animatedOpacity,
+  segSlideOffsetX,
   clipEffects,
   resolvedEffects,
   clipHasEffectKeyframes,
@@ -310,7 +311,9 @@ export function compileExport(project: Project, opts: ExportOptions): string[] {
   const expandKeyframes = (seg: VideoSeg): VideoSeg[] => {
     const clip = seg.clip;
     const animated =
-      (clip.keyframes && Object.keys(clip.keyframes).length > 0) || clipHasEffectKeyframes(clip);
+      (clip.keyframes && Object.keys(clip.keyframes).length > 0) ||
+      clipHasEffectKeyframes(clip) ||
+      !!seg.slideKind; // push/slide bake their x-offset per slice
     if (!animated) return [seg];
     const dur = seg.end - seg.start;
     if (dur <= 0) return [seg];
@@ -333,6 +336,8 @@ export function compileExport(project: Project, opts: ExportOptions): string[] {
       const tail = dur - local;
       if (fo > 0 && tail < fo) fade *= Math.max(0, tail / fo);
       const src = isImg ? { sourceIn: 0, sourceOut: 0 } : clipSubSource(clip, a, b);
+      const tr = animatedTransform(clip, localT);
+      const slide = segSlideOffsetX(seg, mid);
       out.push({
         ...seg,
         start: a,
@@ -341,7 +346,8 @@ export function compileExport(project: Project, opts: ExportOptions): string[] {
         sourceOut: src.sourceOut,
         xIn: 0,
         xOut: 0,
-        fixedTransform: animatedTransform(clip, localT),
+        slideKind: undefined, // offset already baked into fixedTransform below
+        fixedTransform: slide === 0 ? tr : { ...tr, x: tr.x + slide },
         fixedOpacity: animatedOpacity(clip, localT) * fade,
         fixedEffects: clipHasEffectKeyframes(clip) ? resolvedEffects(clip, localT) : undefined,
       });
