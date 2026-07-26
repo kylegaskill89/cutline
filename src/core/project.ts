@@ -132,6 +132,16 @@ export interface Clip {
   keyframes?: Partial<Record<AnimProp, Keyframe[]>>;
   /** Ordered stack of visual effects applied before the transform/composite stage. */
   effects?: ClipEffect[];
+  /** Ordered stack of audio effects (filters) applied to this clip's audio. */
+  audioEffects?: AudioClipEffect[];
+}
+
+/** One entry in a clip's audio-effect stack. `type` keys the audio registry. */
+export interface AudioClipEffect {
+  type: string;
+  /** Disabled entries stay in the stack but contribute nothing (default enabled). */
+  enabled?: boolean;
+  params: Record<string, number>;
 }
 
 /** One entry in a clip's effect stack. `type` keys into the effect registry. */
@@ -257,6 +267,73 @@ export function clearKeyframes(p: Project, clipId: string, prop: AnimProp): Proj
 /** A clip's effect stack (never undefined). */
 export function clipEffects(c: Clip): ClipEffect[] {
   return c.effects ?? [];
+}
+
+// ------------------------------------------------------- audio effects --
+/** A clip's audio-effect stack (never undefined). */
+export function clipAudioEffects(c: Clip): AudioClipEffect[] {
+  return c.audioEffects ?? [];
+}
+
+/** Appends an audio effect (with default params) to a clip's audio stack. */
+export function addAudioEffect(
+  p: Project,
+  clipId: string,
+  type: string,
+  params: Record<string, number>,
+): Project {
+  const next = clone(p);
+  const c = findClip(next, clipId);
+  if (!c) return p;
+  if (!c.audioEffects) c.audioEffects = [];
+  c.audioEffects.push({ type, params: { ...params } });
+  return next;
+}
+
+/** Removes the audio effect at `index`. */
+export function removeAudioEffect(p: Project, clipId: string, index: number): Project {
+  const next = clone(p);
+  const c = findClip(next, clipId);
+  if (!c || !c.audioEffects || index < 0 || index >= c.audioEffects.length) return p;
+  c.audioEffects.splice(index, 1);
+  if (c.audioEffects.length === 0) delete c.audioEffects;
+  return next;
+}
+
+/** Toggles an audio effect's enabled flag (disabled = kept but inert). */
+export function toggleAudioEffect(p: Project, clipId: string, index: number): Project {
+  const next = clone(p);
+  const c = findClip(next, clipId);
+  if (!c || !c.audioEffects || !c.audioEffects[index]) return p;
+  const e = c.audioEffects[index];
+  e.enabled = e.enabled === false;
+  return next;
+}
+
+/** Moves an audio effect within the stack by `dir` (-1 up, +1 down). */
+export function moveAudioEffect(p: Project, clipId: string, index: number, dir: -1 | 1): Project {
+  const next = clone(p);
+  const c = findClip(next, clipId);
+  if (!c || !c.audioEffects) return p;
+  const j = index + dir;
+  if (index < 0 || index >= c.audioEffects.length || j < 0 || j >= c.audioEffects.length) return p;
+  [c.audioEffects[index], c.audioEffects[j]] = [c.audioEffects[j], c.audioEffects[index]];
+  return next;
+}
+
+/** Sets one parameter of a clip's audio effect at `index`. */
+export function setAudioEffectParam(
+  p: Project,
+  clipId: string,
+  index: number,
+  key: string,
+  value: number,
+): Project {
+  const next = clone(p);
+  const c = findClip(next, clipId);
+  if (!c || !c.audioEffects || !c.audioEffects[index]) return p;
+  c.audioEffects[index].params[key] = value;
+  return next;
 }
 
 /** Appends an effect (with its default params/colours) to a clip's stack. */

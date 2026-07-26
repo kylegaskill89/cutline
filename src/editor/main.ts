@@ -63,6 +63,12 @@ import {
   clearClipEffects,
   setClipEffectParam,
   setClipEffectColor,
+  clipAudioEffects,
+  addAudioEffect,
+  removeAudioEffect,
+  toggleAudioEffect,
+  moveAudioEffect,
+  setAudioEffectParam,
   isEffectParamAnimated,
   effectParamAt,
   setEffectKeyframe,
@@ -104,6 +110,7 @@ import {
   defaultColors,
   ADJUSTMENT_EFFECT_IDS,
 } from "../core/effects.ts";
+import { AUDIO_EFFECTS, audioEffectDef, audioDefaultParams } from "../core/audioEffects.ts";
 import { runUpdateCheck } from "../tauri/updater.ts";
 import { matteFill } from "./matteRender.ts";
 import { TimelineView, type Tool } from "./timelineView.ts";
@@ -1202,6 +1209,7 @@ function refreshSelectionUI() {
 
 // --- Transform properties panel ---
 const propsPanel = $<HTMLDivElement>("propsPanel");
+const audioPanel = $<HTMLDivElement>("audioPanel");
 const prX = $<HTMLInputElement>("prX");
 const prY = $<HTMLInputElement>("prY");
 const prScaleX = $<HTMLInputElement>("prScaleX");
@@ -1490,6 +1498,164 @@ function syncEffects(clipId: string) {
   preview.render();
 }
 
+// ------------------------------------------------------- audio effects UI --
+const afxAdd = $<HTMLSelectElement>("afxAdd");
+const afxList = $<HTMLDivElement>("afxList");
+for (const def of AUDIO_EFFECTS) {
+  const opt = document.createElement("option");
+  opt.value = def.id;
+  opt.textContent = def.name;
+  afxAdd.appendChild(opt);
+}
+afxAdd.addEventListener("change", () => {
+  const type = afxAdd.value;
+  afxAdd.value = "";
+  const id = selectedAudioClip();
+  if (!id || !type) return;
+  pushHistory();
+  project = addAudioEffect(project, id, type, audioDefaultParams(type));
+  afterAudioEdit(id);
+});
+
+/** The single selected clip if it lives on an audio track, else null. */
+function selectedAudioClip(): string | null {
+  if (tl.selected.size !== 1) return null;
+  const id = [...tl.selected][0];
+  for (const t of project.tracks) {
+    if (t.kind !== "audio") continue;
+    if (t.clips.some((c) => c.id === id)) return id;
+  }
+  return null;
+}
+
+/** Commit an audio-effect change: refresh state, rebuild cards, reschedule audio. */
+function afterAudioEdit(clipId: string) {
+  tl.project = project;
+  preview.project = project;
+  renderAudioEffectList(clipId);
+  if (playing) audio.start(project, playhead); // pick up filter edits live
+}
+
+let afxRenderedClip: string | null = null;
+let afxRenderedEffects: Clip["audioEffects"] = undefined;
+
+function renderAudioEffectList(clipId: string) {
+  const clip = findClipById(clipId);
+  afxList.replaceChildren();
+  afxRenderedClip = clipId;
+  afxRenderedEffects = clip?.audioEffects;
+  if (!clip) return;
+  const effects = clipAudioEffects(clip);
+  effects.forEach((inst, index) => {
+    const def = audioEffectDef(inst.type);
+    if (!def) return;
+    const card = document.createElement("div");
+    card.className = "fx-item" + (inst.enabled === false ? " disabled" : "");
+
+    const head = document.createElement("div");
+    head.className = "fx-item-head";
+    const up = document.createElement("button");
+    up.className = "fx-item-move";
+    up.textContent = "▲";
+    up.title = "Move effect up";
+    up.disabled = index === 0;
+    up.addEventListener("click", () => {
+      pushHistory();
+      project = moveAudioEffect(project, clipId, index, -1);
+      afterAudioEdit(clipId);
+    });
+    const down = document.createElement("button");
+    down.className = "fx-item-move";
+    down.textContent = "▼";
+    down.title = "Move effect down";
+    down.disabled = index === effects.length - 1;
+    down.addEventListener("click", () => {
+      pushHistory();
+      project = moveAudioEffect(project, clipId, index, 1);
+      afterAudioEdit(clipId);
+    });
+    const name = document.createElement("span");
+    name.className = "fx-item-name";
+    name.textContent = def.name;
+    const toggle = document.createElement("button");
+    toggle.className = "fx-item-toggle" + (inst.enabled === false ? "" : " active");
+    toggle.textContent = inst.enabled === false ? "Off" : "On";
+    toggle.title = "Enable/disable this effect";
+    toggle.addEventListener("click", () => {
+      pushHistory();
+      project = toggleAudioEffect(project, clipId, index);
+      afterAudioEdit(clipId);
+    });
+    const remove = document.createElement("button");
+    remove.className = "fx-item-remove";
+    remove.textContent = "✕";
+    remove.title = "Remove effect";
+    remove.addEventListener("click", () => {
+      pushHistory();
+      project = removeAudioEffect(project, clipId, index);
+      afterAudioEdit(clipId);
+    });
+    head.append(up, down, name, toggle, remove);
+    card.appendChild(head);
+
+    for (const p of def.params) {
+      const row = document.createElement("label");
+      row.className = "fx-param";
+      const label = document.createElement("span");
+      label.className = "pf-label";
+      label.textContent = p.label;
+      const range = document.createElement("input");
+      range.type = "range";
+      range.min = String(p.min);
+      range.max = String(p.max);
+      range.step = String(p.step);
+      const num = document.createElement("input");
+      num.type = "number";
+      num.step = String(p.step);
+      const cur = inst.params[p.key] ?? p.def;
+      range.value = String(cur);
+      num.value = String(cur);
+      const write = (v: number) => {
+        project = setAudioEffectParam(project, clipId, index, p.key, v);
+        // Filter changes only take audible effect on the next (re)schedule.
+        if (playing) audio.start(project, playhead);
+      };
+      range.addEventListener("pointerdown", () => pushHistory());
+      range.addEventListener("input", () => {
+        num.value = range.value;
+        write(Number(range.value));
+      });
+      num.addEventListener("change", () => {
+        pushHistory();
+        range.value = num.value;
+        write(Number(num.value));
+      });
+      const unit = document.createElement("span");
+      unit.className = "unit";
+      unit.textContent = p.unit ?? "";
+      row.append(label, range, num, unit);
+      card.appendChild(row);
+    }
+    afxList.appendChild(card);
+  });
+}
+
+/** Show/populate the Audio panel for a selected audio clip (else hide it). */
+function syncAudioPanel() {
+  const id = selectedAudioClip();
+  if (!id) {
+    audioPanel.classList.add("hidden");
+    afxRenderedClip = null;
+    afxRenderedEffects = undefined;
+    return;
+  }
+  audioPanel.classList.remove("hidden");
+  const clip = findClipById(id);
+  if (id !== afxRenderedClip || clip?.audioEffects !== afxRenderedEffects) {
+    renderAudioEffectList(id);
+  }
+}
+
 // When locked, editing one scale axis mirrors the other (proportional), and
 // on-canvas corner drags scale proportionally too.
 let lockAspect = true;
@@ -1517,6 +1683,7 @@ function syncPreviewSelection() {
   updatePropsPanel();
   syncTextPanel();
   syncMattePanel();
+  syncAudioPanel();
 }
 
 function updatePropsPanel() {

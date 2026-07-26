@@ -19,6 +19,7 @@ import {
   setKeyframe,
   setClipTransform,
   addClipEffect,
+  addAudioEffect,
   setEffectKeyframe,
   addVideoTrack,
   updateTrack,
@@ -186,6 +187,16 @@ test("each audio clip is delayed to its start and mixed", () => {
   // Two audio streams at start 0 -> adelay=0, amix inputs=2.
   assert.match(g, /adelay=0:all=1/);
   assert.match(g, /amix=inputs=2:duration=longest:normalize=0/);
+});
+
+test("audio effects splice into the per-clip audio chain before resample", () => {
+  let p = loaded();
+  const a = p.tracks.find((t) => t.kind === "audio")!.clips[0];
+  p = addAudioEffect(p, a.id, "highpass", { freq: 80 });
+  p = addAudioEffect(p, a.id, "compressor", { threshold: -18, ratio: 3 });
+  const g = graphOf(compileExport(p, opts));
+  // Filters land after the volume/fade stage and before aresample.
+  assert.match(g, /highpass=f=80,acompressor=threshold=0\.12589:ratio=3\.0,aresample=48000/);
 });
 
 test("audio clip delayed by its timeline start", () => {

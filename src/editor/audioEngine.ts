@@ -9,6 +9,7 @@
  * clock while playing (more stable than the system clock for A/V sync).
  */
 import { extractAudioBuffer } from "../tauri/sidecar.ts";
+import { buildAudioChain } from "./audioNodes.ts";
 import {
   clipEnd,
   clipGain,
@@ -28,6 +29,8 @@ interface ActiveNode {
   clipId: string;
   source: AudioBufferSourceNode;
   gain: GainNode;
+  /** Audio-effect filter nodes inserted after the gain (disconnected on stop). */
+  fx?: AudioNode[];
 }
 
 export class AudioEngine {
@@ -228,13 +231,21 @@ export class AudioEngine {
         const gain = ctx.createGain();
         const g = clipGain(clip);
         this.scheduleGainEnvelope(gain, clip, g, when, startTL - clip.start);
-        source.connect(gain).connect(this.master!);
+        // gain → [effect chain] → master, so volume/automation feeds the filters.
+        const chain = buildAudioChain(ctx, clip);
+        source.connect(gain);
+        if (chain) {
+          gain.connect(chain.head);
+          chain.tail.connect(this.master!);
+        } else {
+          gain.connect(this.master!);
+        }
         try {
           source.start(when, offset, Math.min(dur, playBuffer.duration - offset));
         } catch {
           /* ignore scheduling races */
         }
-        this.active.push({ clipId: clip.id, source, gain });
+        this.active.push({ clipId: clip.id, source, gain, fx: chain?.nodes });
       }
     }
     this.playing = true;
@@ -292,6 +303,7 @@ export class AudioEngine {
       }
       n.source.disconnect();
       n.gain.disconnect();
+      for (const node of n.fx ?? []) node.disconnect();
     }
     this.active = [];
     this.playing = false;

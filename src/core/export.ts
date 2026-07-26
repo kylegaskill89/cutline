@@ -41,6 +41,7 @@ import {
   type BlendMode,
 } from "./project.ts";
 import { ffmpegChainFor, ffmpegAdjustChain } from "./effects.ts";
+import { ffmpegAudioChainFor } from "./audioEffects.ts";
 
 export interface ExportOptions {
   outputFile: string;
@@ -448,10 +449,13 @@ export function compileExport(project: Project, opts: ExportOptions): string[] {
     const afade =
       (fi > 0 ? `,afade=t=in:st=0:d=${f3(fi)}` : "") +
       (fo > 0 ? `,afade=t=out:st=${f3(dur - fo)}:d=${f3(fo)}` : "");
+    // Per-clip audio effects (high/low pass, shelves, compressor) after the fades.
+    const aeff = ffmpegAudioChainFor(clip.audioEffects);
+    const aeffChain = aeff ? `,${aeff}` : "";
     chains.push(
       `[${idx}:a:${stream}]atrim=start=${f3(clip.sourceIn)}:end=${f3(clip.sourceOut)},` +
         `${revA(clip)}asetpts=PTS-STARTPTS${atempoChain(clipSpeed(clip))},` +
-        `${volumeFilter(clip)}${afade},` +
+        `${volumeFilter(clip)}${afade}${aeffChain},` +
         `aresample=48000,aformat=channel_layouts=stereo,` +
         `adelay=${delayMs}:all=1[${label}]`,
     );
