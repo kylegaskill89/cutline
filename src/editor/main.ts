@@ -601,6 +601,12 @@ for (const tab of Array.from(document.querySelectorAll<HTMLButtonElement>(".scop
     }
   });
 }
+// Premiere-style playback resolution: lower quality renders faster while playing.
+const previewQuality = $<HTMLSelectElement>("previewQuality");
+previewQuality.addEventListener("change", () => {
+  preview.playbackScale = Number(previewQuality.value) || 1;
+});
+
 /** Feed the current program frame into the active scope (call after render). */
 function updateScope() {
   if (!scope.enabled) return;

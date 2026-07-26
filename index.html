@@ -182,6 +182,13 @@
             <button id="playBtn" class="btn" disabled>Play</button>
             <button id="loopBtn" class="tool" title="Loop playback (loops the In/Out range if set)">Loop</button>
             <button id="scopeBtn" class="tool" title="Show video scopes (histogram / waveform / vectorscope)">Scopes</button>
+            <label class="canvas-ctl">Preview
+              <select id="previewQuality" title="Playback resolution — lower renders faster while playing (full quality when paused)">
+                <option value="1">Full</option>
+                <option value="0.5">1/2</option>
+                <option value="0.25">1/4</option>
+              </select>
+            </label>
             <label class="canvas-ctl">Canvas
               <select id="canvasPreset">
                 <option value="1920x1080">1080p · 16:9</option>

@@ -128,6 +128,9 @@ export class Preview {
   lockAspect = true;
   canvasW = 1920; // project canvas dimensions
   canvasH = 1080;
+  /** Playback render-resolution factor (1 = Full, 0.5 = 1/2, 0.25 = 1/4).
+   *  Applied only while playing; paused frames always render at full res. */
+  playbackScale = 1;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -140,14 +143,30 @@ export class Preview {
   }
 
   resize(cssW: number, cssH: number) {
-    const dpr = window.devicePixelRatio || 1;
     this.cssW = cssW;
     this.cssH = cssH;
-    this.canvas.width = Math.round(cssW * dpr);
-    this.canvas.height = Math.round(cssH * dpr);
     this.canvas.style.width = `${cssW}px`;
     this.canvas.style.height = `${cssH}px`;
-    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.applyBacking();
+  }
+
+  /**
+   * Sizes the canvas backing store to the CSS box × device-pixel-ratio, scaled
+   * down by `playbackScale` while playing (Premiere-style playback resolution).
+   * The CSS size is unchanged, so a smaller backing is upscaled by the browser —
+   * fewer pixels to composite/key/filter per frame means a higher frame rate.
+   * Self-correcting: called each render, so play/pause and quality changes just
+   * take effect on the next frame with no explicit re-wiring.
+   */
+  private applyBacking() {
+    const eff = (window.devicePixelRatio || 1) * (this.playing ? this.playbackScale : 1);
+    const w = Math.max(1, Math.round(this.cssW * eff));
+    const h = Math.max(1, Math.round(this.cssH * eff));
+    if (this.canvas.width !== w || this.canvas.height !== h) {
+      this.canvas.width = w;
+      this.canvas.height = h;
+    }
+    this.ctx.setTransform(eff, 0, 0, eff, 0, 0);
   }
 
   // ---- projection (project px <-> css px, letterboxed) ----
@@ -307,6 +326,7 @@ export class Preview {
   // ---- main frame ----
   render() {
     const c = this.ctx;
+    this.applyBacking(); // match backing res to play state / selected quality
     c.clearRect(0, 0, this.cssW, this.cssH);
     // Pasteboard behind the canvas, so the canvas bounds are visible.
     c.fillStyle = "#0b0d10";
