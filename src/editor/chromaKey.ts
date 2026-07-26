@@ -11,11 +11,16 @@
 export class ChromaKeyer {
   private canvas = document.createElement("canvas");
   private ctx = this.canvas.getContext("2d", { willReadFrequently: true });
-  private readonly MAX = 960; // cap the keyed buffer width (preview is downscaled)
+  // Hard ceiling on the keyed buffer width, so a 4K clip doesn't cost 8M
+  // per-pixel JS ops per frame. Well above typical on-screen preview sizes.
+  private readonly HARD_MAX = 2560;
 
   /**
    * @param similarity 0..1 — chroma distance under which a pixel is fully keyed.
    * @param blend 0..1 — soft edge band above `similarity`.
+   * @param targetW desired output width (the clip's on-screen size in device px);
+   *   the buffer is capped to min(source width, targetW, HARD_MAX) so the keyed
+   *   frame matches display resolution instead of a fixed low cap.
    * Returns a canvas with the key colour made transparent, or `null` if keying
    * isn't possible (context/size unavailable) so the caller can fall back.
    */
@@ -26,14 +31,16 @@ export class ChromaKeyer {
     colorHex: string,
     similarity: number,
     blend: number,
+    targetW?: number,
   ): HTMLCanvasElement | null {
     const ctx = this.ctx;
     if (!ctx || srcW <= 0 || srcH <= 0) return null;
+    const cap = Math.max(1, Math.min(srcW, this.HARD_MAX, Math.round(targetW ?? srcW)));
     let w = srcW;
     let h = srcH;
-    if (w > this.MAX) {
-      h = Math.max(1, Math.round((h * this.MAX) / w));
-      w = this.MAX;
+    if (w > cap) {
+      h = Math.max(1, Math.round((h * cap) / w));
+      w = cap;
     }
     if (this.canvas.width !== w || this.canvas.height !== h) {
       this.canvas.width = w;

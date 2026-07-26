@@ -704,13 +704,13 @@ export class Preview {
     const rEffects = resolvedEffects(seg.clip, this.playhead - seg.clip.start);
     // Chroma key (if present) punches out the key colour on an offscreen buffer;
     // remaining CSS-filter effects then apply to that keyed frame.
-    const keyed = this.chromaKeyed(rEffects, source) ?? source;
+    const dpr = this.canvas.width / Math.max(1, this.cssW);
+    const keyed = this.chromaKeyed(rEffects, source, g.wCss * dpr) ?? source;
     // Apply CSS-filter effects on an identity-transform buffer at device
     // resolution rather than via `c.filter` on the dpr-scaled main context —
     // that path rasterises the filter in CSS pixels and upscales, softening
     // filtered clips on HiDPI/Windows-scaled displays. Done here they stay sharp.
     const filter = cssFilterFor(rEffects);
-    const dpr = this.canvas.width / Math.max(1, this.cssW);
     const draw = filter
       ? this.filtered(keyed, filter, g.wCss * dpr, g.hCss * dpr)
       : keyed;
@@ -777,6 +777,7 @@ export class Preview {
   private chromaKeyed(
     rEffects: ReturnType<typeof resolvedEffects>,
     source: CanvasImageSource,
+    targetW: number,
   ): CanvasImageSource | null {
     const key = rEffects.find((e) => e.type === "chromakey" && e.enabled !== false);
     if (!key) return null;
@@ -789,6 +790,7 @@ export class Preview {
       key.colors?.color ?? "#00d000",
       (key.params.similarity ?? 30) / 100,
       (key.params.blend ?? 10) / 100,
+      targetW,
     );
   }
 
