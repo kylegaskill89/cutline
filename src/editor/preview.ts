@@ -674,13 +674,17 @@ export class Preview {
     tmp.height = th;
     const tctx = tmp.getContext("2d");
     if (!tctx) return;
+    // Filter the composite copy on this identity-transform, device-resolution
+    // buffer (not via c.filter on the dpr-scaled main context, which softens it).
+    tctx.filter = filter;
+    tctx.imageSmoothingQuality = "high";
     try {
       tctx.drawImage(this.canvas, Math.round(ox * dpr), Math.round(oy * dpr), tw, th, 0, 0, tw, th);
     } catch {
       return;
     }
+    tctx.filter = "none";
     c.save();
-    c.filter = filter;
     c.globalAlpha = animatedOpacity(clip, localT); // opacity = adjustment strength
     c.drawImage(tmp, ox, oy, cw, ch);
     c.restore();
@@ -700,12 +704,19 @@ export class Preview {
     const rEffects = resolvedEffects(seg.clip, this.playhead - seg.clip.start);
     // Chroma key (if present) punches out the key colour on an offscreen buffer;
     // remaining CSS-filter effects then apply to that keyed frame.
-    const draw = this.chromaKeyed(rEffects, source) ?? source;
+    const keyed = this.chromaKeyed(rEffects, source) ?? source;
+    // Apply CSS-filter effects on an identity-transform buffer at device
+    // resolution rather than via `c.filter` on the dpr-scaled main context —
+    // that path rasterises the filter in CSS pixels and upscales, softening
+    // filtered clips on HiDPI/Windows-scaled displays. Done here they stay sharp.
+    const filter = cssFilterFor(rEffects);
+    const dpr = this.canvas.width / Math.max(1, this.cssW);
+    const draw = filter
+      ? this.filtered(keyed, filter, g.wCss * dpr, g.hCss * dpr)
+      : keyed;
     c.save();
     c.globalAlpha = this.visualAlpha(seg);
     c.globalCompositeOperation = BLEND_OP[clipBlend(seg.clip)];
-    const filter = cssFilterFor(rEffects);
-    if (filter) c.filter = filter;
     c.translate(g.center.x, g.center.y);
     c.rotate(g.rad);
     const flip = flipFactorsFor(rEffects);
@@ -716,6 +727,49 @@ export class Preview {
       /* frame not decodable yet */
     }
     c.restore();
+  }
+
+  private fxCanvas?: HTMLCanvasElement;
+  private fxCtx?: CanvasRenderingContext2D | null;
+
+  /**
+   * Renders `source` through a CSS `filter` on a reusable, identity-transform
+   * offscreen canvas sized to the on-screen box in DEVICE pixels, and returns it
+   * to be drawn (unfiltered) onto the main canvas. Keeps per-pixel effects
+   * (brightness/contrast/… ) pixel-sharp on HiDPI, where `ctx.filter` on the
+   * dpr-scaled context would blur them.
+   */
+  private filtered(
+    source: CanvasImageSource,
+    filter: string,
+    devW: number,
+    devH: number,
+  ): CanvasImageSource {
+    const w = Math.max(1, Math.round(devW));
+    const h = Math.max(1, Math.round(devH));
+    if (!this.fxCanvas) {
+      this.fxCanvas = document.createElement("canvas");
+      this.fxCtx = this.fxCanvas.getContext("2d");
+    }
+    const fx = this.fxCanvas;
+    const fc = this.fxCtx;
+    if (!fc) return source;
+    if (fx.width !== w || fx.height !== h) {
+      fx.width = w;
+      fx.height = h;
+    }
+    fc.setTransform(1, 0, 0, 1, 0, 0);
+    fc.clearRect(0, 0, w, h);
+    fc.filter = filter;
+    fc.imageSmoothingQuality = "high";
+    try {
+      fc.drawImage(source, 0, 0, w, h);
+    } catch {
+      fc.filter = "none";
+      return source;
+    }
+    fc.filter = "none";
+    return fx;
   }
 
   /** Runs the source through the chroma keyer if the stack has an enabled
