@@ -97,7 +97,13 @@ import {
   assetUrl,
 } from "../tauri/sidecar.ts";
 import { compileExport } from "../core/export.ts";
-import { EFFECTS, effectDef, defaultParams, defaultColors } from "../core/effects.ts";
+import {
+  EFFECTS,
+  effectDef,
+  defaultParams,
+  defaultColors,
+  ADJUSTMENT_EFFECT_IDS,
+} from "../core/effects.ts";
 import { runUpdateCheck } from "../tauri/updater.ts";
 import { matteFill } from "./matteRender.ts";
 import { TimelineView, type Tool } from "./timelineView.ts";
@@ -526,11 +532,13 @@ function refreshMediaList() {
     meta.className = "m-meta";
     meta.textContent = m.isText
       ? "text"
-      : m.isColor
-        ? `matte · ${m.color}`
-        : m.isImage
-          ? `${m.isAnimated ? "gif" : "image"} · ${m.width}×${m.height}`
-          : `${secondsToTimestamp(m.duration)} · ${m.audioStreamCount} audio`;
+      : m.isAdjustment
+        ? "adjustment"
+        : m.isColor
+          ? `matte · ${m.color}`
+          : m.isImage
+            ? `${m.isAnimated ? "gif" : "image"} · ${m.width}×${m.height}`
+            : `${secondsToTimestamp(m.duration)} · ${m.audioStreamCount} audio`;
     item.append(name, meta);
     mediaListEl.appendChild(item);
   }
@@ -1181,13 +1189,23 @@ const fxPaste = $<HTMLButtonElement>("fxPaste");
 const fxClear = $<HTMLButtonElement>("fxClear");
 let effectsClipboard: import("../core/project.ts").ClipEffect[] | null = null;
 
-// Populate the "Add effect" dropdown once from the registry.
-for (const def of EFFECTS) {
-  const opt = document.createElement("option");
-  opt.value = def.id;
-  opt.textContent = def.label;
-  fxAdd.appendChild(opt);
+/** (Re)populates the "Add effect" dropdown — limited to gate-able colour/blur
+ *  effects when the selected clip is an adjustment layer. */
+function refreshFxAdd(isAdjustment: boolean) {
+  fxAdd.replaceChildren();
+  const ph = document.createElement("option");
+  ph.value = "";
+  ph.textContent = "+ Add effect…";
+  fxAdd.appendChild(ph);
+  for (const def of EFFECTS) {
+    if (isAdjustment && !ADJUSTMENT_EFFECT_IDS.has(def.id)) continue;
+    const opt = document.createElement("option");
+    opt.value = def.id;
+    opt.textContent = def.label;
+    fxAdd.appendChild(opt);
+  }
 }
+refreshFxAdd(false);
 fxAdd.addEventListener("change", () => {
   const type = fxAdd.value;
   fxAdd.value = ""; // reset to placeholder
@@ -1231,6 +1249,7 @@ function renderEffectList(clipId: string) {
   fxRenderedClip = clipId;
   fxRenderedEffects = clip?.effects;
   if (!clip) return;
+  refreshFxAdd(!!project.media.find((m) => m.id === clip.mediaId)?.isAdjustment);
   const effects = clipEffects(clip);
   effects.forEach((inst, index) => {
     const def = effectDef(inst.type);
@@ -1901,6 +1920,36 @@ function addColorMatte() {
   syncAll();
 }
 addMatteBtn.addEventListener("click", addColorMatte);
+
+const addAdjBtn = $<HTMLButtonElement>("addAdjBtn");
+function addAdjustmentLayer() {
+  pushHistory();
+  const id = newId("media");
+  const media: Media = {
+    id,
+    path: "",
+    name: "Adjustment Layer",
+    duration: DEFAULT_IMAGE_DURATION,
+    hasVideo: true,
+    audioStreamCount: 0,
+    isAdjustment: true,
+    width: canvasW,
+    height: canvasH,
+  };
+  ensureVideoTrack();
+  project = addMedia(project, media);
+  project = placeMedia(project, id, playhead);
+  const clip = project.tracks
+    .filter((t) => t.kind === "video")
+    .flatMap((t) => t.clips)
+    .find((c) => c.mediaId === id);
+  tl.selected.clear();
+  if (clip) tl.selected.add(clip.id);
+  exportBtn.disabled = timelineDuration(project) <= 0;
+  playBtn.disabled = false;
+  syncAll();
+}
+addAdjBtn.addEventListener("click", addAdjustmentLayer);
 
 volEl.addEventListener("input", () => audio.setMasterVolume(Number(volEl.value) / 100));
 maximizeBtn.addEventListener("click", () => {

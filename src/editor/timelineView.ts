@@ -1125,7 +1125,11 @@ export class TimelineView {
         const sel = this.selected.has(clip.id);
         const isVideo = clip.kind === "video";
         const cm = this.project!.media.find((m) => m.id === clip.mediaId);
-        c.fillStyle = cm?.isColor
+        c.fillStyle = cm?.isAdjustment
+          ? sel
+            ? "#8e7bd6"
+            : "#6f5fb0"
+          : cm?.isColor
           ? (cm.color ?? "#39c06a")
           : cm?.isText
             ? sel
@@ -1162,8 +1166,8 @@ export class TimelineView {
           c.stroke();
         }
 
-        // Filmstrip thumbnails for real footage (not images/text/mattes).
-        if (isVideo && !cm?.isImage && !cm?.isText && !cm?.isColor) {
+        // Filmstrip thumbnails for real footage (not images/text/mattes/adjustments).
+        if (isVideo && !cm?.isImage && !cm?.isText && !cm?.isColor && !cm?.isAdjustment) {
           this.drawThumbnails(clip, x0, x1, cx0, y + 3, cw, h - 6);
         }
 

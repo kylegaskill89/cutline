@@ -342,6 +342,10 @@ export class Preview {
         this.drawColorClip(seg, media);
         continue;
       }
+      if (media?.isAdjustment) {
+        this.applyAdjustment(seg);
+        continue;
+      }
       if (media?.isImage) {
         if (media.isAnimated) {
           this.drawGif(seg, media);
@@ -632,6 +636,38 @@ export class Preview {
     const tail = len - local;
     if (fo > 0 && tail < fo) a *= Math.max(0, tail / fo);
     return a;
+  }
+
+  /** Adjustment layer: re-draw the composite-so-far through the clip's effect
+   *  filter (at its opacity as strength), affecting everything below it. */
+  private applyAdjustment(seg: VideoSeg) {
+    const clip = seg.clip;
+    const localT = this.playhead - clip.start;
+    const filter = cssFilterFor(resolvedEffects(clip, localT));
+    if (!filter) return;
+    const c = this.ctx;
+    const s = this.displayScale();
+    const { ox, oy } = this.offset();
+    const cw = this.canvasW * s;
+    const ch = this.canvasH * s;
+    const dpr = this.canvas.width / Math.max(1, this.cssW);
+    const tw = Math.max(1, Math.round(cw * dpr));
+    const th = Math.max(1, Math.round(ch * dpr));
+    const tmp = document.createElement("canvas");
+    tmp.width = tw;
+    tmp.height = th;
+    const tctx = tmp.getContext("2d");
+    if (!tctx) return;
+    try {
+      tctx.drawImage(this.canvas, Math.round(ox * dpr), Math.round(oy * dpr), tw, th, 0, 0, tw, th);
+    } catch {
+      return;
+    }
+    c.save();
+    c.filter = filter;
+    c.globalAlpha = animatedOpacity(clip, localT); // opacity = adjustment strength
+    c.drawImage(tmp, ox, oy, cw, ch);
+    c.restore();
   }
 
   /** Extra css-x offset from a push/slide transition at the current playhead. */

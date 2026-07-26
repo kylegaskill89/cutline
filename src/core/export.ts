@@ -40,7 +40,7 @@ import {
   type VideoSeg,
   type BlendMode,
 } from "./project.ts";
-import { ffmpegChainFor } from "./effects.ts";
+import { ffmpegChainFor, ffmpegAdjustChain } from "./effects.ts";
 
 export interface ExportOptions {
   outputFile: string;
@@ -150,11 +150,13 @@ export function compileExport(project: Project, opts: ExportOptions): string[] {
   const inputIndex = new Map<string, number>(); // media id -> input index (non-image)
   const imageClipInput = new Map<string, number>(); // image clip id -> input index
   const isImageMedia = (id: string) => !!project.media.find((m) => m.id === id)?.isImage;
+  const isAdjustMedia = (id: string) => !!project.media.find((m) => m.id === id)?.isAdjustment;
 
   const used = new Set<string>();
   for (const t of project.tracks) for (const c of t.clips) used.add(c.mediaId);
   for (const m of project.media) {
-    if (!used.has(m.id) || m.isImage) continue; // images handled per-clip below
+    // images are handled per-clip below; adjustment layers have no input file.
+    if (!used.has(m.id) || m.isImage || m.isAdjustment) continue;
     inputIndex.set(m.id, inputs.length);
     inputs.push({ path: m.path, pre: [] });
   }
@@ -372,6 +374,7 @@ export function compileExport(project: Project, opts: ExportOptions): string[] {
     t.clips.some((c) => c.keyframes && Object.keys(c.keyframes).length > 0),
   );
   const anyEffectKeyframe = videoTracks.some((t) => t.clips.some((c) => clipHasEffectKeyframes(c)));
+  const anyAdjustment = videoTracks.some((t) => t.clips.some((c) => isAdjustMedia(c.mediaId)));
   const mediaDurOf = (mediaId: string): number => {
     const m = project.media.find((mm) => mm.id === mediaId);
     return m ? (m.isImage || m.isText ? Infinity : m.duration) : Infinity;
@@ -385,7 +388,8 @@ export function compileExport(project: Project, opts: ExportOptions): string[] {
     !anyTransition &&
     !anyBlend &&
     !anyKeyframe &&
-    !anyEffectKeyframe
+    !anyEffectKeyframe &&
+    !anyAdjustment
   ) {
     // Single video track: CONCAT clips + black gaps (simple and exact).
     const clips = [...(tracksWithClips[0]?.clips ?? [])]
@@ -414,7 +418,19 @@ export function compileExport(project: Project, opts: ExportOptions): string[] {
     let acc = "base";
     for (const track of [...videoTracks].reverse()) {
       const segs = resolveVideoSegments(track, mediaDurOf).sort((a, b) => a.start - b.start);
-      for (const seg of segs) for (const sub of expandKeyframes(seg)) acc = overlaySeg(acc, sub);
+      for (const seg of segs) {
+        if (isAdjustMedia(seg.clip.mediaId)) {
+          // Adjustment layer: time-gate its effect chain onto the composite below.
+          const gated = ffmpegAdjustChain(clipEffects(seg.clip), seg.start, seg.end);
+          if (gated) {
+            const out = `av${segCount++}`;
+            chains.push(`[${acc}]${gated}[${out}]`);
+            acc = out;
+          }
+          continue;
+        }
+        for (const sub of expandKeyframes(seg)) acc = overlaySeg(acc, sub);
+      }
     }
     chains.push(`[${acc}]null[vout]`);
   }

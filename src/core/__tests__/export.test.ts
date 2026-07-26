@@ -128,6 +128,30 @@ test("animated effect params force the overlay path and bake per-slice values", 
   assert.match(g, /eq=brightness=0\.\d+/);
 });
 
+test("adjustment layer gates its effect chain onto the composite below", () => {
+  let p = loaded();
+  p = addVideoTrack(p);
+  const adj: Media = {
+    id: "adj",
+    path: "",
+    name: "Adjustment Layer",
+    duration: 5,
+    hasVideo: true,
+    audioStreamCount: 0,
+    isAdjustment: true,
+    width: 1920,
+    height: 1080,
+  };
+  p = addMedia(p, adj);
+  const top = p.tracks.find((t) => t.kind === "video" && t.clips.length === 0)!;
+  p = placeMedia(p, "adj", 0, top.id);
+  const adjClip = p.tracks.flatMap((t) => t.clips).find((c) => c.mediaId === "adj")!;
+  p = addClipEffect(p, adjClip.id, "brightness", { amount: 30 });
+  const g = graphOf(compileExport(p, opts));
+  assert.doesNotMatch(g, /concat=/); // forced onto the overlay compositor
+  assert.match(g, /eq=brightness=0\.300:enable='between\(t,/);
+});
+
 test("push transition bakes sliding overlay slices (no concat)", () => {
   let p = loaded();
   const vt = p.tracks.find((t) => t.kind === "video")!;

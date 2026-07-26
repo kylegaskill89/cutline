@@ -236,6 +236,38 @@ export function ffmpegChainFor(effects: ClipEffect[] | undefined): string {
   return parts.join(",");
 }
 
+/** Effects usable on an adjustment layer: colour/blur filters that ffmpeg can
+ *  gate with `enable=` (timeline editing). Keeps the gated export chain valid. */
+export const ADJUSTMENT_EFFECT_IDS = new Set([
+  "brightness",
+  "contrast",
+  "saturation",
+  "hue",
+  "blur",
+  "grayscale",
+]);
+
+/**
+ * FFmpeg chain for an adjustment layer's effects, each filter time-gated to
+ * [start,end] via `enable=` so it only affects the composite during the layer's
+ * span. Only ADJUSTMENT_EFFECT_IDS are emitted (they support timeline editing).
+ */
+export function ffmpegAdjustChain(
+  effects: ClipEffect[] | undefined,
+  start: number,
+  end: number,
+): string {
+  if (!effects || effects.length === 0) return "";
+  const gate = `enable='between(t,${start.toFixed(3)},${end.toFixed(3)})'`;
+  const parts: string[] = [];
+  for (const e of enabled(effects)) {
+    if (!ADJUSTMENT_EFFECT_IDS.has(e.type)) continue;
+    const frag = BY_ID.get(e.type)!.ffmpeg(e.params, e.colors ?? {});
+    if (frag) parts.push(`${frag}:${gate}`);
+  }
+  return parts.join(",");
+}
+
 /**
  * Horizontal/vertical mirror factors (±1) contributed by enabled Flip effects.
  * The preview compositor applies these with ctx.scale (ffmpeg uses hflip/vflip),

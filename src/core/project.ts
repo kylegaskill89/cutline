@@ -31,6 +31,9 @@ export interface Media {
   /** When set, the matte is a linear gradient from `color` to `gradient.color2`
    *  along `gradient.angle` degrees (0 = left→right, 90 = top→bottom). */
   gradient?: MatteGradient;
+  /** An adjustment layer: draws nothing itself; its clip's effect stack is
+   *  applied to everything composited on the tracks below it, in its time span. */
+  isAdjustment?: boolean;
   /** Video/image dimensions / frame rate (optional; used to pick export canvas). */
   width?: number;
   height?: number;
@@ -83,12 +86,12 @@ export const DEFAULT_MATTE_COLOR = "#1a1a1a";
  * behave like stills: no in/out range and unlimited source handles.
  */
 export function isGeneratedMedia(m: Media): boolean {
-  return !!(m.isText || m.isColor);
+  return !!(m.isText || m.isColor || m.isAdjustment);
 }
 
 /** True when a media has no real timeline source (still, GIF, or generated). */
 export function isStillLike(m: Media): boolean {
-  return !!(m.isImage || m.isText || m.isColor);
+  return !!(m.isImage || m.isText || m.isColor || m.isAdjustment);
 }
 
 export interface Clip {

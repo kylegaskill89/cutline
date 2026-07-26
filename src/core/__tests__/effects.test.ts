@@ -7,6 +7,7 @@ import {
   defaultColors,
   cssFilterFor,
   ffmpegChainFor,
+  ffmpegAdjustChain,
   flipFactorsFor,
 } from "../effects.ts";
 import type { ClipEffect } from "../project.ts";
@@ -118,4 +119,13 @@ test("empty / undefined stacks yield empty strings", () => {
   assert.equal(cssFilterFor(undefined), "");
   assert.equal(cssFilterFor([]), "");
   assert.equal(ffmpegChainFor(undefined), "");
+});
+
+test("ffmpegAdjustChain time-gates supported effects and drops the rest", () => {
+  const eff: ClipEffect[] = [
+    { type: "brightness", params: { amount: 20 } },
+    { type: "flip", params: { horizontal: 1 } }, // not timeline-gateable → dropped
+  ];
+  const s = ffmpegAdjustChain(eff, 1, 3);
+  assert.equal(s, "eq=brightness=0.200:enable='between(t,1.000,3.000)'");
 });
