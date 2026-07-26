@@ -1059,21 +1059,23 @@ export class TimelineView {
         const sel = this.selected.has(clip.id);
         const isVideo = clip.kind === "video";
         const cm = this.project!.media.find((m) => m.id === clip.mediaId);
-        c.fillStyle = cm?.isText
-          ? sel
-            ? COLORS.textClipSel
-            : COLORS.textClip
-          : cm?.isImage
+        c.fillStyle = cm?.isColor
+          ? (cm.color ?? "#39c06a")
+          : cm?.isText
             ? sel
-              ? COLORS.imageClipSel
-              : COLORS.imageClip
-            : isVideo
+              ? COLORS.textClipSel
+              : COLORS.textClip
+            : cm?.isImage
               ? sel
-                ? COLORS.videoClipSel
-                : COLORS.videoClip
-              : sel
-                ? COLORS.audioClipSel
-                : COLORS.audioClip;
+                ? COLORS.imageClipSel
+                : COLORS.imageClip
+              : isVideo
+                ? sel
+                  ? COLORS.videoClipSel
+                  : COLORS.videoClip
+                : sel
+                  ? COLORS.audioClipSel
+                  : COLORS.audioClip;
         roundRect(c, cx0, y + 3, cw, h - 6, 5);
         c.fill();
         if (sel) {
@@ -1094,8 +1096,8 @@ export class TimelineView {
           c.stroke();
         }
 
-        // Filmstrip thumbnails for video clips (not images/text).
-        if (isVideo && !cm?.isImage && !cm?.isText) {
+        // Filmstrip thumbnails for real footage (not images/text/mattes).
+        if (isVideo && !cm?.isImage && !cm?.isText && !cm?.isColor) {
           this.drawThumbnails(clip, x0, x1, cx0, y + 3, cw, h - 6);
         }
 
@@ -1125,7 +1127,8 @@ export class TimelineView {
           c.beginPath();
           c.rect(cx0, y, cw, h);
           c.clip();
-          const hasStrip = isVideo && !cm?.isImage && !cm?.isText && this.thumbnails.has(clip.mediaId);
+          const hasStrip =
+            isVideo && !cm?.isImage && !cm?.isText && !cm?.isColor && this.thumbnails.has(clip.mediaId);
           if (hasStrip) {
             c.fillStyle = "rgba(0,0,0,0.45)";
             c.fillRect(cx0, y + 3, cw, 16);

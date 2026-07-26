@@ -25,10 +25,22 @@ export interface Media {
   /** A generated text/title clip; `text` holds its content + styling. */
   isText?: boolean;
   text?: TextSpec;
+  /** A generated solid-colour matte clip; `color` is its hex fill. */
+  isColor?: boolean;
+  color?: string;
+  /** When set, the matte is a linear gradient from `color` to `gradient.color2`
+   *  along `gradient.angle` degrees (0 = left→right, 90 = top→bottom). */
+  gradient?: MatteGradient;
   /** Video/image dimensions / frame rate (optional; used to pick export canvas). */
   width?: number;
   height?: number;
   fps?: number;
+}
+
+/** A colour matte's linear-gradient fill (from Media.color to color2). */
+export interface MatteGradient {
+  color2: string;
+  angle: number; // degrees; 0 = left→right, 90 = top→bottom
 }
 
 /** Styling for a text/title clip. fontSize is in canvas pixels. */
@@ -62,6 +74,22 @@ export const DEFAULT_TEXT: TextSpec = {
 
 /** Default on-timeline length (seconds) for a freshly placed still image. */
 export const DEFAULT_IMAGE_DURATION = 5;
+
+/** Default fill for a new colour matte. */
+export const DEFAULT_MATTE_COLOR = "#1a1a1a";
+
+/**
+ * Generated clips (text, colour matte) have no source file and no audio, and
+ * behave like stills: no in/out range and unlimited source handles.
+ */
+export function isGeneratedMedia(m: Media): boolean {
+  return !!(m.isText || m.isColor);
+}
+
+/** True when a media has no real timeline source (still, GIF, or generated). */
+export function isStillLike(m: Media): boolean {
+  return !!(m.isImage || m.isText || m.isColor);
+}
 
 export interface Clip {
   id: string;
@@ -267,6 +295,37 @@ export function removeClipEffect(p: Project, clipId: string, index: number): Pro
   if (!c || !c.effects || index < 0 || index >= c.effects.length) return p;
   c.effects.splice(index, 1);
   if (c.effects.length === 0) delete c.effects;
+  return next;
+}
+
+/** Moves an effect within the stack by `dir` (-1 up, +1 down). Order affects render. */
+export function moveClipEffect(p: Project, clipId: string, index: number, dir: -1 | 1): Project {
+  const next = clone(p);
+  const c = findClip(next, clipId);
+  if (!c || !c.effects) return p;
+  const j = index + dir;
+  if (index < 0 || index >= c.effects.length || j < 0 || j >= c.effects.length) return p;
+  [c.effects[index], c.effects[j]] = [c.effects[j], c.effects[index]];
+  return next;
+}
+
+/** Appends deep copies of `effects` to a clip's stack (paste). */
+export function appendClipEffects(p: Project, clipId: string, effects: ClipEffect[]): Project {
+  if (effects.length === 0) return p;
+  const next = clone(p);
+  const c = findClip(next, clipId);
+  if (!c) return p;
+  if (!c.effects) c.effects = [];
+  for (const e of effects) c.effects.push(structuredClone(e));
+  return next;
+}
+
+/** Removes every effect from a clip. */
+export function clearClipEffects(p: Project, clipId: string): Project {
+  const next = clone(p);
+  const c = findClip(next, clipId);
+  if (!c || !c.effects) return p;
+  delete c.effects;
   return next;
 }
 
@@ -842,12 +901,10 @@ export function placeMedia(
   const targetVideo =
     (videoTrackId && videoTracks.find((t) => t.id === videoTrackId)) || videoTracks[0];
 
-  // Stills/text ignore source ranges (no inherent time); footage honours [in,out].
-  const sIn = range && !media.isImage && !media.isText ? Math.max(0, range.in) : 0;
+  // Stills/text/matte ignore source ranges (no inherent time); footage honours [in,out].
+  const sIn = range && !isStillLike(media) ? Math.max(0, range.in) : 0;
   const sOut =
-    range && !media.isImage && !media.isText
-      ? Math.min(media.duration, range.out)
-      : media.duration;
+    range && !isStillLike(media) ? Math.min(media.duration, range.out) : media.duration;
   if (media.hasVideo && targetVideo) {
     const clip: Clip = {
       id: newId("clip"),
@@ -895,7 +952,7 @@ export function placeMedia(
 
 /** Timeline length a media occupies when placed with an optional source range. */
 export function placedLength(media: Media, range?: SourceRange): number {
-  if (range && !media.isImage && !media.isText) {
+  if (range && !isStillLike(media)) {
     return Math.max(0, Math.min(media.duration, range.out) - Math.max(0, range.in));
   }
   return media.duration;
@@ -1106,8 +1163,8 @@ export function setClipEdge(
   let hi = Infinity;
   for (const { clip, track } of members) {
     const m = next.media.find((mm) => mm.id === clip.mediaId);
-    // Stills / text have no source limit, so their out-edge can extend freely.
-    const mediaDur = m ? (m.isImage || m.isText ? Infinity : m.duration) : Infinity;
+    // Stills / text / mattes have no source limit, so their out-edge extends freely.
+    const mediaDur = m ? (isStillLike(m) ? Infinity : m.duration) : Infinity;
     const spd = clipSpeed(clip);
     const rev = clipReversed(clip);
     const dur = clipDuration(clip);
@@ -1393,7 +1450,7 @@ export function slipClip(p: Project, clipId: string, dSource: number): Project {
   let hi = Infinity;
   for (const c of members) {
     const m = next.media.find((mm) => mm.id === c.mediaId);
-    if (!m || m.isImage || m.isText) continue;
+    if (!m || isStillLike(m)) continue;
     lo = Math.max(lo, -c.sourceIn); // sourceIn + d >= 0
     hi = Math.min(hi, m.duration - c.sourceOut); // sourceOut + d <= mediaDur
   }
@@ -1402,7 +1459,7 @@ export function slipClip(p: Project, clipId: string, dSource: number): Project {
   const d = Math.max(lo, Math.min(dSource, hi));
   for (const c of members) {
     const m = next.media.find((mm) => mm.id === c.mediaId);
-    if (!m || m.isImage || m.isText) continue;
+    if (!m || isStillLike(m)) continue;
     c.sourceIn += d;
     c.sourceOut += d;
   }
@@ -1433,7 +1490,7 @@ export function slideClip(p: Project, clipId: string, dTime: number): Project {
   lo = Math.max(lo, -c.start); // start >= 0
   if (hasPrev) {
     const pm = next.media.find((mm) => mm.id === prev.mediaId);
-    const pDur = pm && !pm.isImage && !pm.isText ? pm.duration : Infinity;
+    const pDur = pm && !isStillLike(pm) ? pm.duration : Infinity;
     hi = Math.min(hi, (pDur - prev.sourceOut) / clipSpeed(prev)); // prev tail handle
     lo = Math.max(lo, MIN_CLIP - clipDuration(prev)); // prev keeps min length
   }
@@ -1482,6 +1539,29 @@ export function setTextSpec(p: Project, mediaId: string, patch: Partial<TextSpec
   const m = next.media.find((mm) => mm.id === mediaId);
   if (!m || !m.text) return p;
   m.text = { ...m.text, ...patch };
+  return next;
+}
+
+/** Sets a colour matte's primary (or solid) fill colour. */
+export function setMatteColor(p: Project, mediaId: string, color: string): Project {
+  const next = clone(p);
+  const m = next.media.find((mm) => mm.id === mediaId);
+  if (!m || !m.isColor) return p;
+  m.color = color;
+  return next;
+}
+
+/** Sets or clears a colour matte's linear gradient (null → solid fill). */
+export function setMatteGradient(
+  p: Project,
+  mediaId: string,
+  gradient: MatteGradient | null,
+): Project {
+  const next = clone(p);
+  const m = next.media.find((mm) => mm.id === mediaId);
+  if (!m || !m.isColor) return p;
+  if (gradient) m.gradient = { ...gradient };
+  else delete m.gradient;
   return next;
 }
 

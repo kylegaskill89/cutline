@@ -55,6 +55,9 @@ import {
   addClipEffect,
   removeClipEffect,
   toggleClipEffect,
+  moveClipEffect,
+  appendClipEffects,
+  clearClipEffects,
   setClipEffectParam,
   setClipEffectColor,
   isEffectParamAnimated,
@@ -67,6 +70,9 @@ import {
   clipEnd,
   DEFAULT_IMAGE_DURATION,
   DEFAULT_TEXT,
+  DEFAULT_MATTE_COLOR,
+  setMatteColor,
+  setMatteGradient,
   newId,
   type Project,
   type Media,
@@ -90,6 +96,7 @@ import {
 import { compileExport } from "../core/export.ts";
 import { EFFECTS, effectDef, defaultParams, defaultColors } from "../core/effects.ts";
 import { runUpdateCheck } from "../tauri/updater.ts";
+import { matteFill } from "./matteRender.ts";
 import { TimelineView, type Tool } from "./timelineView.ts";
 import { AudioEngine } from "./audioEngine.ts";
 import { Preview } from "./preview.ts";
@@ -317,7 +324,7 @@ function isSupportedMediaPath(p: string): boolean {
 
 /** Extracts waveforms + decodes audio for a media's streams (background). */
 function hydrateMediaAudio(m: Media) {
-  if (m.isText) return;
+  if (m.isText || m.isColor) return;
   for (let s = 0; s < m.audioStreamCount; s++) {
     extractWaveform(m.path, s)
       .then((env) => {
@@ -331,7 +338,7 @@ function hydrateMediaAudio(m: Media) {
 
 /** Extracts filmstrip thumbnails for a video media (background) and caches them. */
 function hydrateMediaThumbnails(m: Media) {
-  if (!m.hasVideo || m.isImage || m.isText) return;
+  if (!m.hasVideo || m.isImage || m.isText || m.isColor) return;
   const count = 12;
   extractThumbnails(m.path, count, m.duration, 128, 72)
     .then((urls) => {
@@ -498,9 +505,11 @@ function refreshMediaList() {
     meta.className = "m-meta";
     meta.textContent = m.isText
       ? "text"
-      : m.isImage
-        ? `${m.isAnimated ? "gif" : "image"} · ${m.width}×${m.height}`
-        : `${secondsToTimestamp(m.duration)} · ${m.audioStreamCount} audio`;
+      : m.isColor
+        ? `matte · ${m.color}`
+        : m.isImage
+          ? `${m.isAnimated ? "gif" : "image"} · ${m.width}×${m.height}`
+          : `${secondsToTimestamp(m.duration)} · ${m.audioStreamCount} audio`;
     item.append(name, meta);
     mediaListEl.appendChild(item);
   }
@@ -908,31 +917,55 @@ async function renderTextPng(
   return new Uint8Array(await blob.arrayBuffer());
 }
 
-/** Produces a project where text clips are replaced by baked full-frame image
- *  clips (identity transform), so the pure export compiler needs no text logic. */
+/** A matte PNG. Solid mattes are a tiny swatch (scaled up by the compiler);
+ *  gradients render at the export resolution so the ramp stays smooth. Uses the
+ *  same `matteFill` as the preview, so the two match. */
+async function renderMattePng(media: Media, W: number, H: number): Promise<Uint8Array> {
+  const gradient = !!media.gradient;
+  const w = gradient ? W : 16;
+  const h = gradient ? H : 16;
+  const cv = document.createElement("canvas");
+  cv.width = w;
+  cv.height = h;
+  const ctx = cv.getContext("2d")!;
+  ctx.fillStyle = matteFill(ctx, media, 0, 0, w, h);
+  ctx.fillRect(0, 0, w, h);
+  const blob: Blob = await new Promise((res) => cv.toBlob((b) => res(b!), "image/png"));
+  return new Uint8Array(await blob.arrayBuffer());
+}
+
+/** Produces a project where generated clips (text, colour matte) are replaced by
+ *  baked image clips, so the pure export compiler needs no text/matte logic.
+ *  Text bakes its transform into a full-frame PNG (identity clip); a matte bakes a
+ *  plain solid PNG and KEEPS its transform, so matte scale/position/keyframes
+ *  still animate. */
 async function buildExportProject(W: number, H: number): Promise<Project> {
-  const textClips: Clip[] = [];
+  const genClips: Clip[] = [];
   for (const t of project.tracks) {
     if (t.kind !== "video") continue;
     for (const c of t.clips) {
-      if (project.media.find((m) => m.id === c.mediaId)?.isText) textClips.push(c);
+      const m = project.media.find((mm) => mm.id === c.mediaId);
+      if (m?.isText || m?.isColor) genClips.push(c);
     }
   }
-  if (textClips.length === 0) return project;
+  if (genClips.length === 0) return project;
 
   const out: Project = structuredClone(project);
-  for (const clip of textClips) {
+  for (const clip of genClips) {
     const media = project.media.find((m) => m.id === clip.mediaId)!;
-    const bytes = await renderTextPng(media.text!, clipTransform(clip), W, H);
+    const isText = !!media.isText;
+    const bytes = isText
+      ? await renderTextPng(media.text!, clipTransform(clip), W, H)
+      : await renderMattePng(media, W, H);
     const path = await invoke<string>("write_temp_file", {
-      name: `text_${clip.id}_${Date.now()}.png`,
+      name: `${isText ? "text" : "matte"}_${clip.id}_${Date.now()}.png`,
       data: Array.from(bytes),
     });
     const imgId = newId("media");
     out.media.push({
       id: imgId,
       path,
-      name: "text",
+      name: isText ? "text" : "matte",
       duration: media.duration,
       hasVideo: true,
       audioStreamCount: 0,
@@ -942,10 +975,10 @@ async function buildExportProject(W: number, H: number): Promise<Project> {
     });
     for (const t of out.tracks) {
       for (const c of t.clips) {
-        if (c.id === clip.id) {
-          c.mediaId = imgId;
-          delete c.transform; // baked into the PNG
-        }
+        if (c.id !== clip.id) continue;
+        c.mediaId = imgId;
+        if (isText) delete c.transform; // text baked its transform into the PNG
+        // matte keeps its transform so scale/position/keyframes still apply
       }
     }
   }
@@ -1122,6 +1155,10 @@ const prBlend = $<HTMLSelectElement>("prBlend");
 const prReset = $<HTMLButtonElement>("prReset");
 const fxAdd = $<HTMLSelectElement>("fxAdd");
 const fxList = $<HTMLDivElement>("fxList");
+const fxCopy = $<HTMLButtonElement>("fxCopy");
+const fxPaste = $<HTMLButtonElement>("fxPaste");
+const fxClear = $<HTMLButtonElement>("fxClear");
+let effectsClipboard: import("../core/project.ts").ClipEffect[] | null = null;
 
 // Populate the "Add effect" dropdown once from the registry.
 for (const def of EFFECTS) {
@@ -1143,6 +1180,28 @@ fxAdd.addEventListener("change", () => {
   preview.render();
 });
 
+fxCopy.addEventListener("click", () => {
+  const id = selectedTransformClip();
+  const clip = id ? findClipById(id) : undefined;
+  if (!clip) return;
+  effectsClipboard = clipEffects(clip).map((e) => structuredClone(e));
+  fxPaste.disabled = effectsClipboard.length === 0;
+});
+fxPaste.addEventListener("click", () => {
+  const id = selectedTransformClip();
+  if (!id || !effectsClipboard || effectsClipboard.length === 0) return;
+  pushHistory();
+  project = appendClipEffects(project, id, effectsClipboard);
+  syncEffects(id);
+});
+fxClear.addEventListener("click", () => {
+  const id = selectedTransformClip();
+  if (!id) return;
+  pushHistory();
+  project = clearClipEffects(project, id);
+  syncEffects(id);
+});
+
 /** Rebuilds the per-clip effect cards in the Effects section. */
 function renderEffectList(clipId: string) {
   const clip = findClipById(clipId);
@@ -1160,6 +1219,26 @@ function renderEffectList(clipId: string) {
 
     const head = document.createElement("div");
     head.className = "fx-item-head";
+    const up = document.createElement("button");
+    up.className = "fx-item-move";
+    up.textContent = "▲";
+    up.title = "Move effect up";
+    up.disabled = index === 0;
+    up.addEventListener("click", () => {
+      pushHistory();
+      project = moveClipEffect(project, clipId, index, -1);
+      syncEffects(clipId);
+    });
+    const down = document.createElement("button");
+    down.className = "fx-item-move";
+    down.textContent = "▼";
+    down.title = "Move effect down";
+    down.disabled = index === effects.length - 1;
+    down.addEventListener("click", () => {
+      pushHistory();
+      project = moveClipEffect(project, clipId, index, 1);
+      syncEffects(clipId);
+    });
     const name = document.createElement("span");
     name.className = "fx-item-name";
     name.textContent = def.label;
@@ -1184,7 +1263,7 @@ function renderEffectList(clipId: string) {
       renderEffectList(clipId);
       preview.render();
     });
-    head.append(name, toggle, remove);
+    head.append(up, down, name, toggle, remove);
     card.appendChild(head);
 
     // Colour parameters (e.g. chroma-key colour) — a picker, no keyframing.
@@ -1366,6 +1445,7 @@ function syncPreviewSelection() {
   preview.selectedClipId = selectedTransformClip();
   updatePropsPanel();
   syncTextPanel();
+  syncMattePanel();
 }
 
 function updatePropsPanel() {
@@ -1692,6 +1772,115 @@ function addText() {
   txtContent.select();
 }
 addTextBtn.addEventListener("click", addText);
+
+// --- Color matte ---
+const addMatteBtn = $<HTMLButtonElement>("addMatteBtn");
+const mattePanel = $<HTMLDivElement>("mattePanel");
+const matteType = $<HTMLSelectElement>("matteType");
+const matteColor = $<HTMLInputElement>("matteColor");
+const matteColor2 = $<HTMLInputElement>("matteColor2");
+const matteAngle = $<HTMLInputElement>("matteAngle");
+
+/** The media id if the single selected clip is a colour matte, else null. */
+function selectedMatteMedia(): string | null {
+  if (tl.selected.size !== 1) return null;
+  const clip = findClipById([...tl.selected][0]);
+  const m = clip && project.media.find((mm) => mm.id === clip.mediaId);
+  return m && m.isColor ? m.id : null;
+}
+
+function syncMattePanel() {
+  const mid = selectedMatteMedia();
+  if (!mid) {
+    mattePanel.classList.add("hidden");
+    return;
+  }
+  const m = project.media.find((mm) => mm.id === mid)!;
+  mattePanel.classList.remove("hidden");
+  const isGrad = !!m.gradient;
+  matteType.value = isGrad ? "linear" : "solid";
+  matteColor.value = m.color ?? DEFAULT_MATTE_COLOR;
+  matteColor2.value = m.gradient?.color2 ?? "#ffffff";
+  if (document.activeElement !== matteAngle) matteAngle.value = String(m.gradient?.angle ?? 90);
+  for (const el of mattePanel.querySelectorAll<HTMLElement>(".matte-grad")) el.hidden = !isGrad;
+}
+
+/** Current gradient settings from the panel (for building/updating a gradient). */
+function panelGradient() {
+  return { color2: matteColor2.value, angle: Number(matteAngle.value) || 0 };
+}
+
+matteType.addEventListener("change", () => {
+  const mid = selectedMatteMedia();
+  if (!mid) return;
+  pushHistory();
+  project = setMatteGradient(project, mid, matteType.value === "linear" ? panelGradient() : null);
+  syncAll();
+});
+
+let matteColorDirty = false;
+matteColor.addEventListener("input", () => {
+  const mid = selectedMatteMedia();
+  if (!mid) return;
+  if (!matteColorDirty) {
+    pushHistory();
+    matteColorDirty = true;
+  }
+  project = setMatteColor(project, mid, matteColor.value);
+  tl.project = project;
+  preview.project = project;
+  preview.render();
+});
+matteColor.addEventListener("change", () => (matteColorDirty = false));
+
+let matteGradDirty = false;
+const commitGradientLive = () => {
+  const mid = selectedMatteMedia();
+  if (!mid) return;
+  if (!matteGradDirty) {
+    pushHistory();
+    matteGradDirty = true;
+  }
+  project = setMatteGradient(project, mid, panelGradient());
+  tl.project = project;
+  preview.project = project;
+  preview.render();
+};
+matteColor2.addEventListener("input", commitGradientLive);
+matteColor2.addEventListener("change", () => (matteGradDirty = false));
+matteAngle.addEventListener("input", commitGradientLive);
+matteAngle.addEventListener("change", () => (matteGradDirty = false));
+
+function addColorMatte() {
+  pushHistory();
+  const id = newId("media");
+  const media: Media = {
+    id,
+    path: "",
+    name: "Color Matte",
+    duration: DEFAULT_IMAGE_DURATION,
+    hasVideo: true,
+    audioStreamCount: 0,
+    isColor: true,
+    color: DEFAULT_MATTE_COLOR,
+    width: canvasW,
+    height: canvasH,
+  };
+  ensureVideoTrack();
+  project = addMedia(project, media);
+  project = placeMedia(project, id, playhead);
+  const clip = project.tracks
+    .filter((t) => t.kind === "video")
+    .flatMap((t) => t.clips)
+    .find((c) => c.mediaId === id);
+  tl.selected.clear();
+  if (clip) tl.selected.add(clip.id);
+  exportBtn.disabled = timelineDuration(project) <= 0;
+  playBtn.disabled = false;
+  syncAll();
+}
+addMatteBtn.addEventListener("click", addColorMatte);
+
 volEl.addEventListener("input", () => audio.setMasterVolume(Number(volEl.value) / 100));
 maximizeBtn.addEventListener("click", () => {
   const on = editorEl.classList.toggle("maximized");
@@ -1700,6 +1889,26 @@ maximizeBtn.addEventListener("click", () => {
 
 const updateBtn = $<HTMLButtonElement>("updateBtn");
 updateBtn.addEventListener("click", () => void runUpdateCheck({ silent: false }));
+
+const snapshotBtn = $<HTMLButtonElement>("snapshotBtn");
+snapshotBtn.addEventListener("click", () => void saveSnapshot());
+async function saveSnapshot() {
+  const cv = preview.snapshotCanvas();
+  if (!cv) return;
+  const blob: Blob | null = await new Promise((res) => cv.toBlob((b) => res(b), "image/png"));
+  if (!blob) return;
+  const path = await save({
+    defaultPath: "frame.png",
+    filters: [{ name: "PNG Image", extensions: ["png"] }],
+  });
+  if (!path) return;
+  try {
+    const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()));
+    await invoke("write_binary_file", { path, data: bytes });
+  } catch (e) {
+    await message(`Could not save snapshot: ${e}`, { title: "Snapshot failed", kind: "error" });
+  }
+}
 
 for (const btn of document.querySelectorAll<HTMLButtonElement>(".tool[data-tool]")) {
   btn.addEventListener("click", () => selectTool((btn.dataset.tool as Tool) ?? "select"));

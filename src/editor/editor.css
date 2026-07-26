@@ -367,7 +367,8 @@ body {
   font-weight: 600;
 }
 .fx-item-toggle,
-.fx-item-remove {
+.fx-item-remove,
+.fx-item-move {
   background: none;
   border: 1px solid var(--line);
   color: var(--muted);
@@ -376,6 +377,19 @@ body {
   font-size: 11px;
   cursor: pointer;
   line-height: 1.4;
+}
+.fx-item-move {
+  padding: 1px 4px;
+  font-size: 9px;
+}
+.fx-item-move:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.fx-actions {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
 }
 .fx-item-toggle.active {
   color: var(--accent);
@@ -414,6 +428,9 @@ body {
 }
 .fx-param .kf {
   flex: 0 0 auto;
+}
+.props-field[hidden] {
+  display: none;
 }
 .fx-param.fx-toggle input[type="checkbox"] {
   width: 15px;

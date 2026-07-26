@@ -17,6 +17,8 @@
         <button id="exportBtn" class="btn" disabled>Export</button>
         <span class="divider"></span>
         <button id="addTextBtn" class="btn">Add Text</button>
+        <button id="addMatteBtn" class="btn">Color Matte</button>
+        <button id="snapshotBtn" class="btn" title="Save the current frame as a PNG">Snapshot</button>
         <span class="spacer"></span>
         <span id="projInfo" class="proj-info">No media</span>
         <span class="spacer"></span>
@@ -79,6 +81,11 @@
                       <option value="">+ Add effect…</option>
                     </select>
                   </div>
+                  <div class="fx-actions">
+                    <button id="fxCopy" class="btn small" title="Copy this clip's effects">Copy</button>
+                    <button id="fxPaste" class="btn small" title="Paste copied effects" disabled>Paste</button>
+                    <button id="fxClear" class="btn small" title="Remove all effects">Clear</button>
+                  </div>
                   <div id="fxList" class="fx-list"></div>
                 </div>
               </div>
@@ -120,6 +127,24 @@
                   <label class="props-field"><span class="pf-label">Outline</span><input id="txtStroke" type="color" /></label>
                   <label class="props-field"><span class="pf-label">Width</span><input id="txtStrokeW" type="number" step="1" min="0" max="40" /><span class="unit">px</span></label>
                   <div class="props-field"><span class="pf-label"></span><button id="txtStrokeClear" class="btn small">No Outline</button><button id="txtShadow" class="tool" title="Drop shadow">Shadow</button></div>
+                </div>
+              </div>
+            </div>
+            <div id="mattePanel" class="props-panel hidden">
+              <div class="props-head">
+                <span class="props-title">Color Matte</span>
+              </div>
+              <div class="props-scroll">
+                <div class="fx-group">
+                  <label class="props-field"><span class="pf-label">Type</span>
+                    <select id="matteType">
+                      <option value="solid">Solid</option>
+                      <option value="linear">Linear gradient</option>
+                    </select>
+                  </label>
+                  <label class="props-field"><span class="pf-label">Fill</span><input id="matteColor" type="color" /></label>
+                  <label class="props-field matte-grad"><span class="pf-label">Fill 2</span><input id="matteColor2" type="color" /></label>
+                  <label class="props-field matte-grad"><span class="pf-label">Angle</span><input id="matteAngle" type="number" step="15" /><span class="unit">°</span></label>
                 </div>
               </div>
             </div>

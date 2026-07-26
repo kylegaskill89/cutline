@@ -20,6 +20,12 @@ fn write_text_file(path: String, contents: String) -> Result<(), String> {
     std::fs::write(&path, contents).map_err(|e| e.to_string())
 }
 
+/// Writes raw bytes to an arbitrary path (used to save frame snapshots).
+#[tauri::command]
+fn write_binary_file(path: String, data: Vec<u8>) -> Result<(), String> {
+    std::fs::write(&path, data).map_err(|e| e.to_string())
+}
+
 /// Reads a UTF-8 text file (used to load project files); errs if missing.
 #[tauri::command]
 fn read_text_file(path: String) -> Result<String, String> {
@@ -45,6 +51,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             write_temp_file,
             write_text_file,
+            write_binary_file,
             read_text_file
         ])
         .run(tauri::generate_context!())

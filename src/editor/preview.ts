@@ -19,6 +19,7 @@ import {
   animatedTransform,
   animatedOpacity,
   resolvedEffects,
+  isStillLike,
   sourceTimeAt,
   resolveVideoSegments,
   type Project,
@@ -30,6 +31,7 @@ import {
 } from "../core/project.ts";
 import { cssFilterFor, flipFactorsFor } from "../core/effects.ts";
 import { ChromaKeyer, sourceDims } from "./chromaKey.ts";
+import { matteFill } from "./matteRender.ts";
 import { layoutText, drawTextCentred } from "./textRender.ts";
 
 /** Blend mode → canvas globalCompositeOperation. */
@@ -247,7 +249,7 @@ export class Preview {
 
   private mediaDurOf = (mediaId: string): number => {
     const m = this.project?.media.find((mm) => mm.id === mediaId);
-    return m ? (m.isImage || m.isText ? Infinity : m.duration) : Infinity;
+    return m ? (isStillLike(m) ? Infinity : m.duration) : Infinity;
   };
 
   /**
@@ -333,6 +335,10 @@ export class Preview {
       const media = this.mediaOf(clip);
       if (media?.isText) {
         this.drawTextClip(seg, media);
+        continue;
+      }
+      if (media?.isColor) {
+        this.drawColorClip(seg, media);
         continue;
       }
       if (media?.isImage) {
@@ -421,8 +427,42 @@ export class Preview {
       if (!stillActive && !s.el.paused) s.el.pause();
     }
 
-    this.drawHandles();
-    this.drawSnapGuides();
+    if (!this.overlaysHidden) {
+      this.drawHandles();
+      this.drawSnapGuides();
+    }
+  }
+
+  private overlaysHidden = false;
+
+  /**
+   * Renders one clean frame (no selection handles/guides) and returns just the
+   * canvas (output) region as an offscreen canvas at device resolution — used to
+   * save a snapshot of the current frame.
+   */
+  snapshotCanvas(): HTMLCanvasElement | null {
+    this.overlaysHidden = true;
+    try {
+      this.render();
+    } finally {
+      this.overlaysHidden = false;
+    }
+    const dpr = this.canvas.width / Math.max(1, this.cssW);
+    const s = this.displayScale();
+    const { ox, oy } = this.offset();
+    const sx = Math.round(ox * dpr);
+    const sy = Math.round(oy * dpr);
+    const sw = Math.round(this.canvasW * s * dpr);
+    const sh = Math.round(this.canvasH * s * dpr);
+    if (sw <= 0 || sh <= 0) return null;
+    const out = document.createElement("canvas");
+    out.width = sw;
+    out.height = sh;
+    const octx = out.getContext("2d");
+    if (!octx) return null;
+    octx.drawImage(this.canvas, sx, sy, sw, sh, 0, 0, sw, sh);
+    this.render(); // restore normal frame (with overlays)
+    return out;
   }
 
   /** Cyan guide lines shown while a clip snaps to a canvas edge/centre. */
@@ -555,6 +595,22 @@ export class Preview {
     c.rotate((tr.rotation * Math.PI) / 180);
     c.scale(s * tr.scaleX * flip.sx, s * tr.scaleY * flip.sy); // px->css, per-axis scale, flip
     drawTextCentred(c, media.text, layout);
+    c.restore();
+  }
+
+  /** Renders a colour-matte clip: fills its transformed rect with the matte colour. */
+  private drawColorClip(seg: VideoSeg, media: Media) {
+    const g = this.clipGeometry(seg.clip);
+    const c = this.ctx;
+    c.save();
+    c.globalAlpha = this.visualAlpha(seg);
+    c.globalCompositeOperation = BLEND_OP[clipBlend(seg.clip)];
+    const filter = cssFilterFor(resolvedEffects(seg.clip, this.playhead - seg.clip.start));
+    if (filter) c.filter = filter;
+    c.translate(g.center.x, g.center.y);
+    c.rotate(g.rad);
+    c.fillStyle = matteFill(c, media, -g.wCss / 2, -g.hCss / 2, g.wCss, g.hCss);
+    c.fillRect(-g.wCss / 2, -g.hCss / 2, g.wCss, g.hCss);
     c.restore();
   }
 

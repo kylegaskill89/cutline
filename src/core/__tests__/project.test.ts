@@ -47,10 +47,15 @@ import {
   setClipTransform,
   clipTransform,
   isIdentityTransform,
+  setMatteColor,
+  setMatteGradient,
   clipEffects,
   addClipEffect,
   removeClipEffect,
   toggleClipEffect,
+  moveClipEffect,
+  appendClipEffects,
+  clearClipEffects,
   setClipEffectParam,
   setClipEffectColor,
   setEffectKeyframe,
@@ -147,6 +152,67 @@ test("placeMedia sends overlapping audio to fresh lanes (no pile-up)", () => {
   for (const t of audio) assert.equal(t.clips.length, 1); // no lane holds two clips
 });
 
+test("colour matte places as a video clip with no audio and a stretchable edge", () => {
+  const matte: Media = {
+    id: "cm",
+    path: "",
+    name: "Color Matte",
+    duration: 5,
+    hasVideo: true,
+    audioStreamCount: 0,
+    isColor: true,
+    color: "#123456",
+    width: 1920,
+    height: 1080,
+  };
+  let p = emptyProject(1, 2);
+  p = addMedia(p, matte);
+  p = placeMedia(p, "cm", 0);
+  const v = p.tracks.find((t) => t.kind === "video")!;
+  assert.equal(v.clips.length, 1);
+  const audioClips = p.tracks.filter((t) => t.kind === "audio").flatMap((t) => t.clips);
+  assert.equal(audioClips.length, 0); // mattes carry no audio
+  // Infinite source handle: the out-edge can extend well past the 5s default.
+  p = setClipEdge(p, v.clips[0].id, "out", 30);
+  assert.equal(clipEnd(p.tracks.find((t) => t.kind === "video")!.clips[0]), 30);
+});
+
+test("setMatteColor updates the fill colour", () => {
+  const matte: Media = {
+    id: "cm",
+    path: "",
+    name: "Color Matte",
+    duration: 5,
+    hasVideo: true,
+    audioStreamCount: 0,
+    isColor: true,
+    color: "#123456",
+  };
+  let p = emptyProject(1, 0);
+  p = addMedia(p, matte);
+  p = setMatteColor(p, "cm", "#abcdef");
+  assert.equal(p.media.find((m) => m.id === "cm")!.color, "#abcdef");
+});
+
+test("setMatteGradient sets and clears the gradient", () => {
+  const matte: Media = {
+    id: "cm",
+    path: "",
+    name: "Color Matte",
+    duration: 5,
+    hasVideo: true,
+    audioStreamCount: 0,
+    isColor: true,
+    color: "#123456",
+  };
+  let p = emptyProject(1, 0);
+  p = addMedia(p, matte);
+  p = setMatteGradient(p, "cm", { color2: "#ffffff", angle: 45 });
+  assert.deepEqual(p.media.find((m) => m.id === "cm")!.gradient, { color2: "#ffffff", angle: 45 });
+  p = setMatteGradient(p, "cm", null);
+  assert.equal(p.media.find((m) => m.id === "cm")!.gradient, undefined);
+});
+
 test("placeMedia reuses audio lanes when there's no time overlap", () => {
   let p = emptyProject(1, 2);
   p = addMedia(p, media);
@@ -156,6 +222,47 @@ test("placeMedia reuses audio lanes when there's no time overlap", () => {
   const audio = p.tracks.filter((t) => t.kind === "audio");
   assert.equal(audio.length, 2);
   for (const t of audio) assert.equal(t.clips.length, 2);
+});
+
+test("moveClipEffect reorders the stack (order affects render)", () => {
+  let p = loaded();
+  const v = p.tracks.find((t) => t.kind === "video")!.clips[0];
+  p = addClipEffect(p, v.id, "brightness", { amount: 10 });
+  p = addClipEffect(p, v.id, "blur", { amount: 5 });
+  p = moveClipEffect(p, v.id, 1, -1); // blur up to index 0
+  let v2 = p.tracks.find((t) => t.kind === "video")!.clips[0];
+  assert.deepEqual(
+    clipEffects(v2).map((e) => e.type),
+    ["blur", "brightness"],
+  );
+  // Out-of-range moves are no-ops.
+  const before = p;
+  p = moveClipEffect(p, v.id, 0, -1);
+  assert.equal(p, before);
+});
+
+test("appendClipEffects deep-copies a stack; clearClipEffects empties it", () => {
+  let p = loaded();
+  const [v, w] = (() => {
+    let q = addVideoTrack(p);
+    q = addMedia(q, { ...media, id: "m2", path: "b.mp4" });
+    const v = q.tracks.find((t) => t.kind === "video" && t.clips.length > 0)!.clips[0];
+    const emptyV = q.tracks.find((t) => t.kind === "video" && t.clips.length === 0)!;
+    q = placeMedia(q, "m2", 0, emptyV.id);
+    p = q;
+    const w = q.tracks.find((t) => t.kind === "video" && t.clips.some((c) => c.mediaId === "m2"))!
+      .clips[0];
+    return [v, w];
+  })();
+  p = addClipEffect(p, v.id, "hue", { angle: 30 });
+  const src = clipEffects(findClip(p, v.id)!);
+  p = appendClipEffects(p, w.id, src);
+  const wEff = clipEffects(findClip(p, w.id)!);
+  assert.equal(wEff.length, 1);
+  assert.equal(wEff[0].type, "hue");
+  assert.notEqual(wEff[0], src[0]); // deep copy, not the same object
+  p = clearClipEffects(p, w.id);
+  assert.equal(findClip(p, w.id)!.effects, undefined);
 });
 
 test("setClipEffectParam / toggle / remove mutate immutably", () => {
