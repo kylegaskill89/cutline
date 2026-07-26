@@ -8,6 +8,7 @@ import {
   splitAt,
   moveClips,
   setClipGain,
+  setGainKeyframe,
   setClipEdge,
   setClipFade,
   setClipOpacity,
@@ -125,6 +126,15 @@ test("animated effect params force the overlay path and bake per-slice values", 
   // Overlay path (not concat) + at least one non-zero baked brightness slice.
   assert.doesNotMatch(g, /concat=/);
   assert.match(g, /eq=brightness=0\.\d+/);
+});
+
+test("gain keyframes emit a per-frame volume automation expression", () => {
+  let p = loaded();
+  const a = p.tracks.find((t) => t.kind === "audio")!.clips[0];
+  p = setGainKeyframe(p, a.id, 0, 0);
+  p = setGainKeyframe(p, a.id, 2, 1);
+  const g = graphOf(compileExport(p, opts));
+  assert.match(g, /volume=eval=frame:volume='if\(lt\(t,/);
 });
 
 test("per-clip gain appears in the audio chain", () => {

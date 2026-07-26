@@ -18,6 +18,11 @@ import {
   unlinkClips,
   setClipGain,
   clipGain,
+  gainAt,
+  isGainAnimated,
+  setGainKeyframe,
+  moveGainKeyframe,
+  clearGainKeyframes,
   setClipSpeed,
   clipSpeed,
   clipReversed,
@@ -319,6 +324,30 @@ test("setClipEffectColor stores a hex colour on the effect", () => {
   p = setClipEffectColor(p, v.id, 0, "color", "#123456");
   const v2 = p.tracks.find((t) => t.kind === "video")!.clips[0];
   assert.equal(v2.effects![0].colors!.color, "#123456");
+});
+
+test("gain automation: keyframes interpolate; clear reverts to constant", () => {
+  let p = loaded();
+  const a = p.tracks.find((t) => t.kind === "audio")!.clips[0];
+  p = setGainKeyframe(p, a.id, 0, 0);
+  p = setGainKeyframe(p, a.id, 10, 1);
+  const a2 = findClip(p, a.id)!;
+  assert.equal(isGainAnimated(a2), true);
+  assert.equal(gainAt(a2, 5), 0.5); // midpoint ramp
+  assert.equal(gainAt(a2, 0), 0);
+  p = clearGainKeyframes(p, a.id);
+  assert.equal(isGainAnimated(findClip(p, a.id)!), false);
+});
+
+test("moveGainKeyframe relocates a point (time + value)", () => {
+  let p = loaded();
+  const a = p.tracks.find((t) => t.kind === "audio")!.clips[0];
+  p = setGainKeyframe(p, a.id, 2, 0.5);
+  p = moveGainKeyframe(p, a.id, 2, 5, 0.8);
+  const kfs = findClip(p, a.id)!.gainKeyframes!;
+  assert.equal(kfs.length, 1);
+  assert.equal(kfs[0].t, 5);
+  assert.equal(kfs[0].v, 0.8);
 });
 
 test("splitting a 2x clip divides the source at the retimed point", () => {

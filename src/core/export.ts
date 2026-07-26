@@ -16,6 +16,7 @@ import {
   clipEnd,
   clipDuration,
   clipGain,
+  isGainAnimated,
   clipOpacity,
   clipFadeIn,
   clipFadeOut,
@@ -109,6 +110,28 @@ function atempoChain(spd: number): string {
   }
   steps.push(r);
   return "," + steps.map((s) => `atempo=${s.toFixed(4)}`).join(",");
+}
+
+/** Piecewise-linear ffmpeg expression (in `t`, clip-local seconds) for a gain
+ *  keyframe list: flat before the first / after the last, linear between. */
+function gainExpr(kfs: { t: number; v: number }[]): string {
+  const k = [...kfs].sort((a, b) => a.t - b.t);
+  const n = (x: number) => x.toFixed(4);
+  if (k.length === 1) return n(k[0].v);
+  const seg = (i: number): string => {
+    if (i >= k.length - 1) return n(k[k.length - 1].v);
+    const a = k[i];
+    const b = k[i + 1];
+    const piece = `(${n(a.v)}+(${n(b.v)}-${n(a.v)})*(t-${n(a.t)})/${n(b.t - a.t)})`;
+    return `if(lt(t,${n(b.t)}),${piece},${seg(i + 1)})`;
+  };
+  return `if(lt(t,${n(k[0].t)}),${n(k[0].v)},${seg(0)})`;
+}
+
+/** The `volume` filter for a clip — constant, or a per-frame automation expr. */
+function volumeFilter(clip: Clip): string {
+  if (!isGainAnimated(clip)) return `volume=${clipGain(clip)}`;
+  return `volume=eval=frame:volume='${gainExpr(clip.gainKeyframes!)}'`;
 }
 
 export function compileExport(project: Project, opts: ExportOptions): string[] {
@@ -406,7 +429,7 @@ export function compileExport(project: Project, opts: ExportOptions): string[] {
     chains.push(
       `[${idx}:a:${stream}]atrim=start=${f3(clip.sourceIn)}:end=${f3(clip.sourceOut)},` +
         `${revA(clip)}asetpts=PTS-STARTPTS${atempoChain(clipSpeed(clip))},` +
-        `volume=${clipGain(clip)}${afade},` +
+        `${volumeFilter(clip)}${afade},` +
         `aresample=48000,aformat=channel_layouts=stereo,` +
         `adelay=${delayMs}:all=1[${label}]`,
     );

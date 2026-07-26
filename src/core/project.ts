@@ -106,6 +106,8 @@ export interface Clip {
   groupId: string | null;
   /** Per-clip linear audio gain (1 = unity). Undefined is treated as 1. */
   gain?: number;
+  /** Volume automation: clip-local time → linear gain. Overrides `gain` when set. */
+  gainKeyframes?: Keyframe[];
   /** Per-clip opacity 0..1 for visual clips (1 = opaque). */
   opacity?: number;
   /** Fade in / out durations in seconds (alpha for video, gain for audio). */
@@ -534,6 +536,65 @@ export const MAX_GAIN = 2;
 /** A clip's effective linear gain (defaults to unity). */
 export function clipGain(c: Clip): number {
   return c.gain ?? 1;
+}
+
+/** Whether a clip's volume is automated with gain keyframes. */
+export function isGainAnimated(c: Clip): boolean {
+  return !!c.gainKeyframes && c.gainKeyframes.length > 0;
+}
+
+/** The clip's linear gain at clip-local time `localT` (automation or constant). */
+export function gainAt(c: Clip, localT: number): number {
+  if (!isGainAnimated(c)) return clipGain(c);
+  return Math.max(0, Math.min(MAX_GAIN, evalKeyframes(c.gainKeyframes!, localT)));
+}
+
+/** Sets (or replaces) a gain keyframe at clip-local `localT`. */
+export function setGainKeyframe(p: Project, clipId: string, localT: number, v: number): Project {
+  const next = clone(p);
+  const c = findClip(next, clipId);
+  if (!c) return p;
+  const g = Math.max(0, Math.min(MAX_GAIN, v));
+  if (!c.gainKeyframes) c.gainKeyframes = [];
+  const i = c.gainKeyframes.findIndex((k) => Math.abs(k.t - localT) < 1e-4);
+  if (i >= 0) c.gainKeyframes[i] = { t: localT, v: g };
+  else {
+    c.gainKeyframes.push({ t: localT, v: g });
+    c.gainKeyframes.sort((a, b) => a.t - b.t);
+  }
+  return next;
+}
+
+/** Removes the gain keyframe near clip-local `localT` (clears automation if empty). */
+export function removeGainKeyframeAt(p: Project, clipId: string, localT: number): Project {
+  const next = clone(p);
+  const c = findClip(next, clipId);
+  if (!c || !c.gainKeyframes) return p;
+  c.gainKeyframes = c.gainKeyframes.filter((k) => Math.abs(k.t - localT) >= 1e-3);
+  if (c.gainKeyframes.length === 0) delete c.gainKeyframes;
+  return next;
+}
+
+/** Moves a gain keyframe from `fromT` to `toT` with value `v` (used while dragging). */
+export function moveGainKeyframe(
+  p: Project,
+  clipId: string,
+  fromT: number,
+  toT: number,
+  v: number,
+): Project {
+  let next = removeGainKeyframeAt(p, clipId, fromT);
+  next = setGainKeyframe(next, clipId, toT, v);
+  return next;
+}
+
+/** Clears all gain automation (back to constant gain). */
+export function clearGainKeyframes(p: Project, clipId: string): Project {
+  const next = clone(p);
+  const c = findClip(next, clipId);
+  if (!c || !c.gainKeyframes) return p;
+  delete c.gainKeyframes;
+  return next;
 }
 
 /**

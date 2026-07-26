@@ -8,6 +8,9 @@ import {
   splitAt,
   setClipEdge,
   setClipGain,
+  setGainKeyframe,
+  moveGainKeyframe,
+  removeGainKeyframeAt,
   setClipFade,
   setClipOpacity,
   setClipSpeed,
@@ -261,7 +264,25 @@ const tl = new TimelineView(canvas, {
     tl.draw();
     audio.setClipGainLive(clipId, gain); // hear it immediately while playing
   },
-  onGainEnd: () => commitSnapshotIfChanged(),
+  onGainEnd: () => {
+    commitSnapshotIfChanged();
+    if (playing) audio.start(project, playhead); // pick up automation edits
+  },
+  onGainKeyframe: (clipId, localT, gain) => {
+    project = setGainKeyframe(project, clipId, localT, gain);
+    tl.project = project;
+    tl.draw();
+  },
+  onGainKeyframeMove: (clipId, fromT, toT, gain) => {
+    project = moveGainKeyframe(project, clipId, fromT, toT, gain);
+    tl.project = project;
+    tl.draw();
+  },
+  onGainKeyframeRemove: (clipId, localT) => {
+    project = removeGainKeyframeAt(project, clipId, localT);
+    tl.project = project;
+    tl.draw();
+  },
   onFadeBegin: () => {
     trimSnapshot = structuredClone(project);
   },

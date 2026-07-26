@@ -16,6 +16,7 @@ import {
   clipFadeOut,
   clipSpeed,
   clipReversed,
+  isGainAnimated,
   ANIM_PROPS,
   effectKeyframeTimes,
   MAX_GAIN,
@@ -56,6 +57,9 @@ export interface TimelineCallbacks {
   onGainBegin: () => void;
   onGainDrag: (clipId: string, gain: number) => void;
   onGainEnd: () => void;
+  onGainKeyframe: (clipId: string, localT: number, gain: number) => void;
+  onGainKeyframeMove: (clipId: string, fromT: number, toT: number, gain: number) => void;
+  onGainKeyframeRemove: (clipId: string, localT: number) => void;
   onFadeBegin: () => void;
   onFadeDrag: (clipId: string, edge: "in" | "out", dur: number) => void;
   onFadeEnd: () => void;
@@ -146,6 +150,7 @@ export class TimelineView {
   private trimming: { clipId: string; edge: "in" | "out"; rate?: boolean } | null = null;
   private slipping: { clipId: string; kind: "slip" | "slide"; startX: number } | null = null;
   private gaining: { clipId: string } | null = null;
+  private gainPt: { clipId: string; curT: number } | null = null; // dragging a gain keyframe
   private fading: { clipId: string; edge: "in" | "out" } | null = null;
   private trackResize: { trackId: string; startY: number; startH: number } | null = null;
   private marquee: { x0: number; y0: number; x1: number; y1: number } | null = null;
@@ -318,14 +323,34 @@ export class TimelineView {
       return;
     }
 
-    // On the volume line of an audio clip? Begin a gain drag.
-    if (hit.kind === "audio" && this.gainLineHit(hit, x, y)) {
-      this.gaining = { clipId: hit.id };
-      this.cb.onGainBegin();
-      this.canvas.setPointerCapture(e.pointerId);
-      window.addEventListener("pointermove", this.onGainMove);
-      window.addEventListener("pointerup", this.onGainUp);
-      return;
+    // Audio clip volume rubber-band: Alt+click adds/removes a keyframe, dragging
+    // a keyframe dot moves it, and dragging the flat line sets the constant gain.
+    if (hit.kind === "audio") {
+      const grow = this.rowForClip(hit);
+      const kfT = this.gainKfHit(hit, x, y);
+      if (e.altKey && grow) {
+        this.cb.onGainBegin();
+        if (kfT !== null) this.cb.onGainKeyframeRemove(hit.id, kfT);
+        else this.cb.onGainKeyframe(hit.id, this.localTimeAt(hit, x), this.gainFromY(grow.y, grow.h, y));
+        this.cb.onGainEnd();
+        return;
+      }
+      if (kfT !== null) {
+        this.gainPt = { clipId: hit.id, curT: kfT };
+        this.cb.onGainBegin();
+        this.canvas.setPointerCapture(e.pointerId);
+        window.addEventListener("pointermove", this.onGainPtMove);
+        window.addEventListener("pointerup", this.onGainPtUp);
+        return;
+      }
+      if (!isGainAnimated(hit) && this.gainLineHit(hit, x, y)) {
+        this.gaining = { clipId: hit.id };
+        this.cb.onGainBegin();
+        this.canvas.setPointerCapture(e.pointerId);
+        window.addEventListener("pointermove", this.onGainMove);
+        window.addEventListener("pointerup", this.onGainUp);
+        return;
+      }
     }
 
     // Slip / Slide tools: drag the clip body to slip its source or slide it.
@@ -499,6 +524,47 @@ export class TimelineView {
     this.gaining = null;
     window.removeEventListener("pointermove", this.onGainMove);
     window.removeEventListener("pointerup", this.onGainUp);
+    this.cb.onGainEnd();
+  };
+
+  /** Clip-local time under `x`, clamped to the clip's span. */
+  private localTimeAt(clip: Clip, x: number): number {
+    const t = this.xToTime(x) - clip.start;
+    return Math.min(clipDuration(clip), Math.max(0, t));
+  }
+
+  /** The clip-local time of a gain keyframe whose dot is near (x,y), or null. */
+  private gainKfHit(clip: Clip, x: number, y: number): number | null {
+    if (!isGainAnimated(clip)) return null;
+    const row = this.rowForClip(clip);
+    if (!row) return null;
+    for (const k of clip.gainKeyframes ?? []) {
+      const kx = this.timeToX(clip.start + k.t);
+      const ky = this.gainLineY(row.y, row.h, k.v);
+      if (Math.abs(x - kx) <= GAIN_GRAB_PX + 2 && Math.abs(y - ky) <= GAIN_GRAB_PX + 2) return k.t;
+    }
+    return null;
+  }
+
+  private onGainPtMove = (e: PointerEvent) => {
+    if (!this.gainPt) return;
+    const clip = this.findClip(this.gainPt.clipId);
+    if (!clip) return;
+    const row = this.rowForClip(clip);
+    if (!row) return;
+    const rect = this.canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const toT = this.localTimeAt(clip, x);
+    const gain = this.gainFromY(row.y, row.h, y);
+    this.cb.onGainKeyframeMove(this.gainPt.clipId, this.gainPt.curT, toT, gain);
+    this.gainPt.curT = toT;
+  };
+
+  private onGainPtUp = () => {
+    this.gainPt = null;
+    window.removeEventListener("pointermove", this.onGainPtMove);
+    window.removeEventListener("pointerup", this.onGainPtUp);
     this.cb.onGainEnd();
   };
 
@@ -1381,8 +1447,6 @@ export class TimelineView {
   /** Premiere-style volume rubber-band across an audio clip. */
   private drawGainLine(clip: Clip, x: number, y: number, w: number, h: number) {
     const c = this.ctx;
-    const gain = clipGain(clip);
-    const lineY = this.gainLineY(y, h, gain);
     const unityY = this.gainLineY(y, h, 1);
 
     c.save();
@@ -1400,19 +1464,37 @@ export class TimelineView {
     c.stroke();
     c.setLineDash([]);
 
-    // The gain line itself.
     c.strokeStyle = "#f1c40f";
     c.lineWidth = 1.5;
-    c.beginPath();
-    c.moveTo(x, lineY + 0.5);
-    c.lineTo(x + w, lineY + 0.5);
-    c.stroke();
 
-    // A grab handle in the middle.
-    c.fillStyle = "#f1c40f";
-    c.beginPath();
-    c.arc(x + w / 2, lineY, 2.5, 0, Math.PI * 2);
-    c.fill();
+    if (isGainAnimated(clip)) {
+      // Automation: piecewise line through the keyframes, flat past the ends.
+      const kfs = [...clip.gainKeyframes!].sort((a, b) => a.t - b.t);
+      const x0 = this.timeToX(clip.start);
+      const xEnd = this.timeToX(clipEnd(clip));
+      c.beginPath();
+      c.moveTo(x0, this.gainLineY(y, h, kfs[0].v));
+      for (const k of kfs) c.lineTo(this.timeToX(clip.start + k.t), this.gainLineY(y, h, k.v));
+      c.lineTo(xEnd, this.gainLineY(y, h, kfs[kfs.length - 1].v));
+      c.stroke();
+      c.fillStyle = "#f1c40f";
+      for (const k of kfs) {
+        c.beginPath();
+        c.arc(this.timeToX(clip.start + k.t), this.gainLineY(y, h, k.v), 3, 0, Math.PI * 2);
+        c.fill();
+      }
+    } else {
+      // Flat constant-gain line with a centre grab handle.
+      const lineY = this.gainLineY(y, h, clipGain(clip));
+      c.beginPath();
+      c.moveTo(x, lineY + 0.5);
+      c.lineTo(x + w, lineY + 0.5);
+      c.stroke();
+      c.fillStyle = "#f1c40f";
+      c.beginPath();
+      c.arc(x + w / 2, lineY, 2.5, 0, Math.PI * 2);
+      c.fill();
+    }
     c.restore();
   }
 

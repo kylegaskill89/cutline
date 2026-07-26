@@ -12,6 +12,7 @@ import { extractAudioBuffer } from "../tauri/sidecar.ts";
 import {
   clipEnd,
   clipGain,
+  gainAt,
   clipDuration,
   clipFadeIn,
   clipFadeOut,
@@ -254,25 +255,31 @@ export class AudioEngine {
     const fi = clipFadeIn(clip);
     const fo = clipFadeOut(clip);
     const len = clipDuration(clip);
-    if (fi <= 0 && fo <= 0) {
+    const animated = !!clip.gainKeyframes && clip.gainKeyframes.length > 0;
+    if (fi <= 0 && fo <= 0 && !animated) {
       gain.gain.setValueAtTime(g, when);
       return;
     }
-    const envAt = (local: number): number => {
-      let v = g;
-      if (fi > 0 && local < fi) v = g * (local / fi);
+    // Combined envelope = automated/constant gain × fade multiplier, sampled at
+    // its breakpoints (keyframes + fade edges) with linear ramps between.
+    const fadeMul = (local: number): number => {
+      let m = 1;
+      if (fi > 0 && local < fi) m = local / fi;
       const tail = len - local;
-      if (fo > 0 && tail < fo) v = Math.min(v, g * (tail / fo));
-      return Math.max(0, v);
+      if (fo > 0 && tail < fo) m = Math.min(m, tail / fo);
+      return Math.max(0, Math.min(1, m));
     };
+    const envAt = (local: number): number => gainAt(clip, local) * fadeMul(local);
+    const bps = new Set<number>([len]);
+    if (fi > 0) bps.add(fi);
+    if (fo > 0) bps.add(len - fo);
+    for (const k of clip.gainKeyframes ?? []) bps.add(k.t);
+    const times = [...bps]
+      .filter((t) => t > localAtWhen && t <= len)
+      .sort((a, b) => a - b);
     gain.gain.setValueAtTime(envAt(localAtWhen), when);
-    if (fi > 0 && localAtWhen < fi) {
-      gain.gain.linearRampToValueAtTime(g, when + (fi - localAtWhen));
-    }
-    if (fo > 0) {
-      const foStart = len - fo;
-      if (foStart > localAtWhen) gain.gain.setValueAtTime(g, when + (foStart - localAtWhen));
-      gain.gain.linearRampToValueAtTime(0, when + (len - localAtWhen));
+    for (const t of times) {
+      gain.gain.linearRampToValueAtTime(envAt(t), when + (t - localAtWhen));
     }
   }
 
