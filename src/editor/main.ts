@@ -1081,6 +1081,22 @@ async function buildExportProject(W: number, H: number): Promise<Project> {
 
 let exporting = false; // pauses the tick loop's preview render during frame capture
 
+/** Moves the (potentially huge) -filter_complex graph into a temp file and
+ *  swaps in -filter_complex_script, so a big graph can't blow the OS command-
+ *  line length limit (Windows os error 206). No-op if there's no graph. */
+async function useFilterScript(args: string[]): Promise<string[]> {
+  const i = args.indexOf("-filter_complex");
+  if (i < 0 || i + 1 >= args.length) return args;
+  const graph = args[i + 1];
+  const path = await invoke<string>("write_temp_file", {
+    name: `filtergraph_${Date.now()}.txt`,
+    data: Array.from(new TextEncoder().encode(graph)),
+  });
+  const out = args.slice();
+  out.splice(i, 2, "-filter_complex_script", path);
+  return out;
+}
+
 async function doExport(o: {
   width: number;
   height: number;
@@ -1180,6 +1196,10 @@ async function doExport(o: {
         audioMode: o.audioMode,
       });
     }
+    // A complex composition's -filter_complex string can exceed Windows' command
+    // line limit (~32K chars) → "filename or extension too long". Move the graph
+    // into a temp file and pass it via -filter_complex_script instead.
+    args = await useFilterScript(args);
 
     setExportStatus(o.frameAccurate ? "Encoding…" : "Starting ffmpeg…");
     let started = false;
