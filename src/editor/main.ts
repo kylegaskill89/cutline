@@ -20,8 +20,11 @@ import {
   slipClip,
   slideClip,
   setKeyframe,
+  setKeyframeInterp,
+  keyframeInterpOf,
   clearKeyframes,
   isAnimated,
+  type KeyframeInterp,
   animatedTransform,
   animatedOpacity,
   animatedValue,
@@ -72,6 +75,8 @@ import {
   isEffectParamAnimated,
   effectParamAt,
   setEffectKeyframe,
+  setEffectKeyframeInterp,
+  effectKeyframeInterpOf,
   clearEffectKeyframes,
   setTextSpec,
   groupMembers,
@@ -1406,6 +1411,26 @@ function renderEffectList(clipId: string) {
       kf.className = "kf" + (isEffectParamAnimated(inst, p.key) ? " active" : "");
       kf.textContent = "◆";
       kf.title = `Animate ${p.label}`;
+      // Interpolation chip: shown only while the param is animated.
+      const interp = document.createElement("button");
+      interp.className = "kf-interp" + (isEffectParamAnimated(inst, p.key) ? "" : " hidden");
+      interp.textContent = INTERP_LABEL[effectKeyframeInterpOf(inst, p.key)];
+      interp.title = "Keyframe interpolation (Linear / Hold / Ease)";
+      interp.addEventListener("click", (e) => {
+        e.preventDefault();
+        const c = findClipById(clipId);
+        const i = c?.effects?.[index];
+        if (!i || !isEffectParamAnimated(i, p.key)) return;
+        pushHistory();
+        project = setEffectKeyframeInterp(
+          project,
+          clipId,
+          index,
+          p.key,
+          nextInterp(effectKeyframeInterpOf(i, p.key)),
+        );
+        syncEffects(clipId);
+      });
       const label = document.createElement("span");
       label.className = "pf-label";
       label.textContent = p.label;
@@ -1468,7 +1493,7 @@ function renderEffectList(clipId: string) {
       const unit = document.createElement("span");
       unit.className = "unit";
       unit.textContent = p.unit ?? "";
-      row.append(kf, label, range, num, unit);
+      row.append(kf, interp, label, range, num, unit);
       card.appendChild(row);
 
       // Scrub-sync: keep an animated param's inputs showing the value at the
@@ -1722,6 +1747,13 @@ function updatePropsPanel() {
   for (const b of document.querySelectorAll<HTMLButtonElement>(".kf[data-prop]")) {
     b.classList.toggle("active", isAnimated(clip, b.dataset.prop as AnimProp));
   }
+  // Interpolation chips: shown only for animated properties, labelled with the mode.
+  for (const b of document.querySelectorAll<HTMLButtonElement>(".kf-interp[data-prop]")) {
+    const prop = b.dataset.prop as AnimProp;
+    const on = isAnimated(clip, prop);
+    b.classList.toggle("hidden", !on);
+    if (on) b.textContent = INTERP_LABEL[keyframeInterpOf(clip, prop)];
+  }
   // Rebuild effect cards only when the clip or its (immutable) effects array
   // changes — never on plain scrubs, so an in-progress slider drag isn't torn out.
   if (id !== fxRenderedClip || clip.effects !== fxRenderedEffects) {
@@ -1795,6 +1827,27 @@ function toggleAnimateProp(prop: AnimProp) {
 }
 for (const b of document.querySelectorAll<HTMLButtonElement>(".kf[data-prop]")) {
   b.addEventListener("click", () => toggleAnimateProp(b.dataset.prop as AnimProp));
+}
+
+// Keyframe interpolation: Linear -> Hold -> Ease, cycled per property.
+const INTERP_ORDER: KeyframeInterp[] = ["linear", "hold", "ease"];
+const INTERP_LABEL: Record<KeyframeInterp, string> = { linear: "Lin", hold: "Hold", ease: "Ease" };
+function nextInterp(mode: KeyframeInterp): KeyframeInterp {
+  return INTERP_ORDER[(INTERP_ORDER.indexOf(mode) + 1) % INTERP_ORDER.length];
+}
+for (const b of document.querySelectorAll<HTMLButtonElement>(".kf-interp[data-prop]")) {
+  b.addEventListener("click", () => {
+    const id = selectedTransformClip();
+    const prop = b.dataset.prop as AnimProp;
+    const clip = id ? findClipById(id) : undefined;
+    if (!id || !clip || !isAnimated(clip, prop)) return;
+    pushHistory();
+    project = setKeyframeInterp(project, id, prop, nextInterp(keyframeInterpOf(clip, prop)));
+    tl.project = project;
+    preview.project = project;
+    updatePropsPanel();
+    preview.render();
+  });
 }
 
 prX.addEventListener("change", () => commitTransform({ x: Number(prX.value) / 100 }));

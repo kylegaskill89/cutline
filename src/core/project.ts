@@ -161,10 +161,20 @@ export interface ClipEffect {
 export type AnimProp = "x" | "y" | "scaleX" | "scaleY" | "rotation" | "opacity";
 export const ANIM_PROPS: AnimProp[] = ["x", "y", "scaleX", "scaleY", "rotation", "opacity"];
 
+/**
+ * How the value moves FROM a keyframe to the next one:
+ *  - "linear" (default): constant-rate ramp.
+ *  - "hold": stay at this keyframe's value until the next keyframe (step).
+ *  - "ease": smooth acceleration/deceleration (smoothstep) for organic motion.
+ */
+export type KeyframeInterp = "linear" | "hold" | "ease";
+
 /** A keyframe: value `v` at clip-local timeline time `t` (seconds from the clip start). */
 export interface Keyframe {
   t: number;
   v: number;
+  /** Outgoing interpolation toward the next keyframe (default "linear"). */
+  e?: KeyframeInterp;
 }
 
 /** Whether a clip animates a given property (has ≥1 keyframe for it). */
@@ -173,7 +183,15 @@ export function isAnimated(c: Clip, prop: AnimProp): boolean {
   return !!k && k.length > 0;
 }
 
-/** Linear interpolation across a sorted keyframe list, clamped at the ends. */
+/** Maps a 0..1 progress fraction through a keyframe's outgoing interpolation. */
+function easeFraction(f: number, mode: KeyframeInterp | undefined): number {
+  if (mode === "hold") return 0; // hold the "from" value until the next keyframe
+  if (mode === "ease") return f * f * (3 - 2 * f); // smoothstep
+  return f; // linear
+}
+
+/** Interpolates a sorted keyframe list at `localT`, honouring per-keyframe
+ *  interpolation modes; clamped to the end values outside the range. */
 export function evalKeyframes(kfs: Keyframe[], localT: number): number {
   if (kfs.length === 0) return 0;
   if (localT <= kfs[0].t) return kfs[0].v;
@@ -185,7 +203,7 @@ export function evalKeyframes(kfs: Keyframe[], localT: number): number {
     if (localT >= a.t && localT <= b.t) {
       const span = b.t - a.t;
       const f = span > 1e-9 ? (localT - a.t) / span : 0;
-      return a.v + (b.v - a.v) * f;
+      return a.v + (b.v - a.v) * easeFraction(f, a.e);
     }
   }
   return last.v;
@@ -232,10 +250,36 @@ export function setKeyframe(
   if (!c.keyframes) c.keyframes = {};
   const arr = c.keyframes[prop] ?? (c.keyframes[prop] = []);
   const i = arr.findIndex((k) => Math.abs(k.t - localT) < 1e-4);
-  if (i >= 0) arr[i] = { t: localT, v };
+  if (i >= 0) arr[i] = { ...arr[i], t: localT, v }; // keep this keyframe's interp
   else {
-    arr.push({ t: localT, v });
+    const kf: Keyframe = { t: localT, v };
+    const mode = arr[0]?.e; // new keyframes inherit the property's interp mode
+    if (mode) kf.e = mode;
+    arr.push(kf);
     arr.sort((a, b) => a.t - b.t);
+  }
+  return next;
+}
+
+/** The interpolation mode of a property's keyframes (first keyframe, default linear). */
+export function keyframeInterpOf(c: Clip, prop: AnimProp): KeyframeInterp {
+  return c.keyframes?.[prop]?.[0]?.e ?? "linear";
+}
+
+/** Sets the interpolation mode on every keyframe of a transform/opacity property. */
+export function setKeyframeInterp(
+  p: Project,
+  clipId: string,
+  prop: AnimProp,
+  mode: KeyframeInterp,
+): Project {
+  const next = clone(p);
+  const c = findClip(next, clipId);
+  const arr = c?.keyframes?.[prop];
+  if (!arr) return p;
+  for (const k of arr) {
+    if (mode === "linear") delete k.e;
+    else k.e = mode;
   }
   return next;
 }
@@ -506,10 +550,37 @@ export function setEffectKeyframe(
   if (!e.keyframes) e.keyframes = {};
   const arr = e.keyframes[key] ?? (e.keyframes[key] = []);
   const i = arr.findIndex((k) => Math.abs(k.t - localT) < 1e-4);
-  if (i >= 0) arr[i] = { t: localT, v };
+  if (i >= 0) arr[i] = { ...arr[i], t: localT, v }; // keep this keyframe's interp
   else {
-    arr.push({ t: localT, v });
+    const kf: Keyframe = { t: localT, v };
+    const mode = arr[0]?.e; // inherit the param's interp mode
+    if (mode) kf.e = mode;
+    arr.push(kf);
     arr.sort((a, b) => a.t - b.t);
+  }
+  return next;
+}
+
+/** The interpolation mode of an effect param's keyframes (default linear). */
+export function effectKeyframeInterpOf(inst: ClipEffect, key: string): KeyframeInterp {
+  return inst.keyframes?.[key]?.[0]?.e ?? "linear";
+}
+
+/** Sets the interpolation mode on every keyframe of an effect param. */
+export function setEffectKeyframeInterp(
+  p: Project,
+  clipId: string,
+  index: number,
+  key: string,
+  mode: KeyframeInterp,
+): Project {
+  const next = clone(p);
+  const c = findClip(next, clipId);
+  const arr = c?.effects?.[index]?.keyframes?.[key];
+  if (!arr) return p;
+  for (const k of arr) {
+    if (mode === "linear") delete k.e;
+    else k.e = mode;
   }
   return next;
 }

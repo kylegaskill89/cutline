@@ -859,3 +859,18 @@ body.drag-over::after {
 }
 .kf:hover { color: #9aa4b0; }
 .kf.active { color: #5aa0ff; }
+/* Keyframe interpolation chip (Lin / Hold / Ease). */
+.kf-interp {
+  flex: 0 0 auto;
+  background: #232a33;
+  border: 1px solid var(--border, #2b313a);
+  border-radius: 3px;
+  color: #9aa4b0;
+  cursor: pointer;
+  font-size: 9px;
+  line-height: 1;
+  padding: 2px 4px;
+  margin-right: 2px;
+}
+.kf-interp:hover { color: #d2dae2; border-color: #3a434f; }
+.kf-interp.hidden { display: none; }

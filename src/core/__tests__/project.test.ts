@@ -45,6 +45,8 @@ import {
   setClipsEnabled,
   clipEnabled,
   setKeyframe,
+  setKeyframeInterp,
+  keyframeInterpOf,
   clearKeyframes,
   isAnimated,
   animatedTransform,
@@ -583,6 +585,42 @@ test("keyframes interpolate linearly and clamp at the ends", () => {
   assert.equal(evalKeyframes(kfs, 1), 5); // halfway
   assert.equal(evalKeyframes(kfs, 2), 10);
   assert.equal(evalKeyframes(kfs, 5), 10); // clamp after
+});
+
+test("evalKeyframes honours per-keyframe interpolation modes", () => {
+  // Hold: stays at the from-value until the next keyframe, then jumps.
+  const hold = [
+    { t: 0, v: 0, e: "hold" as const },
+    { t: 2, v: 10 },
+  ];
+  assert.equal(evalKeyframes(hold, 1), 0);
+  assert.equal(evalKeyframes(hold, 1.999), 0);
+  assert.equal(evalKeyframes(hold, 2), 10);
+
+  // Ease (smoothstep): midpoint matches linear, but the quarter point is eased in.
+  const ease = [
+    { t: 0, v: 0, e: "ease" as const },
+    { t: 2, v: 10 },
+  ];
+  assert.equal(evalKeyframes(ease, 1), 5); // smoothstep(0.5) = 0.5 -> 5
+  const q = evalKeyframes(ease, 0.5); // smoothstep(0.25)=0.15625 -> 1.5625
+  assert.ok(q < 2.5, `eased quarter (${q}) should trail the linear 2.5`);
+  assert.ok(Math.abs(q - 1.5625) < 1e-6);
+});
+
+test("setKeyframeInterp sets/clears the mode; edits preserve it", () => {
+  let p = loaded();
+  const id = p.tracks[0].clips[0].id;
+  p = setKeyframe(p, id, "x", 0, 0);
+  p = setKeyframe(p, id, "x", 2, 1);
+  p = setKeyframeInterp(p, id, "x", "ease");
+  assert.equal(keyframeInterpOf(findClip(p, id)!, "x"), "ease");
+  // A new keyframe inherits the property's mode; editing an existing one keeps it.
+  p = setKeyframe(p, id, "x", 1, 0.5);
+  assert.equal(findClip(p, id)!.keyframes!.x!.every((k) => k.e === "ease"), true);
+  p = setKeyframeInterp(p, id, "x", "linear");
+  assert.equal(keyframeInterpOf(findClip(p, id)!, "x"), "linear");
+  assert.equal(findClip(p, id)!.keyframes!.x!.some((k) => k.e), false); // cleared
 });
 
 test("setKeyframe animates a property; animatedTransform reads it at a time", () => {
