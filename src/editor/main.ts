@@ -1133,19 +1133,25 @@ async function doExport(o: {
       exporting = true; // stop the live tick from fighting for the compositor
       setExportStatus(`Rendering 0 / ${nFrames} frames…`);
       setExportProgress(0);
+      // Pipeline: pass PNG bytes as a raw Uint8Array (Tauri 2 transfers these as
+      // raw bytes — far cheaper than Array.from's JSON array), and overlap each
+      // frame's disk write with the next frame's render (one write outstanding).
+      let prevWrite: Promise<unknown> | null = null;
       for (let i = 0; i < nFrames; i++) {
         if (cancelled) break;
         const t = Math.min(end - 1e-4, start + i / o.fps);
         const blob = await preview.captureFrameBlob(project, t, o.width, o.height);
         const bytes = new Uint8Array(await blob.arrayBuffer());
         const name = `frame_${String(i + 1).padStart(6, "0")}.png`;
-        await invoke("write_binary_file", { path: `${framesDir}/${name}`, data: Array.from(bytes) });
+        if (prevWrite) await prevWrite; // cap to one in-flight write
+        prevWrite = invoke("write_binary_file", { path: `${framesDir}/${name}`, data: bytes });
         // Frame rendering is the first 60% of the bar; encoding is the rest.
         setExportProgress(((i + 1) / nFrames) * 60);
         if (i % 5 === 0 || i === nFrames - 1) {
           setExportStatus(`Rendering ${i + 1} / ${nFrames} frames…`);
         }
       }
+      if (prevWrite) await prevWrite; // flush the final frame
       exporting = false;
       if (cancelled) throw new Error("cancelled");
       args = compileExport(project, {
