@@ -178,6 +178,21 @@ export const EFFECTS: EffectDef[] = [
     },
   },
   {
+    // Vignette: darkens toward the edges. Export uses ffmpeg's `vignette`; the
+    // preview approximates it with a radial-gradient overlay (see
+    // vignetteAmountFor) — close but not pixel-identical.
+    id: "vignette",
+    label: "Vignette",
+    params: [{ key: "amount", label: "Amount", min: 0, max: 100, def: 40, step: 1, unit: "%" }],
+    css: () => "",
+    ffmpeg: (p) => {
+      const a = getP(p, "amount", 0);
+      if (a <= 0) return "";
+      const angle = Math.min(Math.PI / 2, (a / 100) * (Math.PI / 2));
+      return `vignette=a=${angle.toFixed(4)}`;
+    },
+  },
+  {
     // Crop: cuts a fraction off each edge, keeping the frame size (cropped edges
     // become transparent, revealing lower tracks / black on a plain track). Not a
     // CSS filter — the preview draws the kept sub-rectangle (see cropFractionsFor);
@@ -297,6 +312,17 @@ export function ffmpegAdjustChain(
     if (frag) parts.push(`${frag}:${gate}`);
   }
   return parts.join(",");
+}
+
+/** Vignette strength (0..1) from an enabled Vignette effect (0 when none). The
+ *  preview darkens the clip's edges by this much. */
+export function vignetteAmountFor(effects: ClipEffect[] | undefined): number {
+  if (!effects) return 0;
+  for (const e of enabled(effects)) {
+    if (e.type !== "vignette") continue;
+    return Math.max(0, Math.min(1, (e.params.amount ?? 0) / 100));
+  }
+  return 0;
 }
 
 /**

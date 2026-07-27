@@ -25,6 +25,7 @@ const NEUTRAL: Record<string, Record<string, number>> = {
   invert: { on: 0 },
   flip: { horizontal: 0, vertical: 0 },
   crop: { left: 0, top: 0, right: 0, bottom: 0 },
+  vignette: { amount: 0 },
 };
 
 test("every colour/blur effect emits nothing at its neutral params", () => {
@@ -84,6 +85,13 @@ test("Black & White is active at its default (adds full desaturation)", () => {
   const p = defaultParams("grayscale");
   assert.equal(effectDef("grayscale")!.css(p, {}), "grayscale(1.000)");
   assert.equal(effectDef("grayscale")!.ffmpeg(p, {}), "hue=s=0.000");
+});
+
+test("vignette: neutral at 0, else a vignette angle scaled by amount", () => {
+  const def = effectDef("vignette")!;
+  assert.equal(def.ffmpeg({ amount: 0 }, {}), "");
+  assert.equal(def.css({ amount: 50 }, {}), ""); // preview handles it, not ctx.filter
+  assert.equal(def.ffmpeg({ amount: 100 }, {}), `vignette=a=${(Math.PI / 2).toFixed(4)}`);
 });
 
 test("crop: neutral at 0, else crops the kept region and pads back to size", () => {

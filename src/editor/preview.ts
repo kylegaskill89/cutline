@@ -30,7 +30,7 @@ import {
   type VideoSeg,
   type BlendMode,
 } from "../core/project.ts";
-import { cssFilterFor, flipFactorsFor, cropFractionsFor } from "../core/effects.ts";
+import { cssFilterFor, flipFactorsFor, cropFractionsFor, vignetteAmountFor } from "../core/effects.ts";
 import { ChromaKeyer, sourceDims } from "./chromaKey.ts";
 import { matteFill } from "./matteRender.ts";
 import { layoutText, drawTextCentred } from "./textRender.ts";
@@ -873,7 +873,24 @@ export class Preview {
     } catch {
       /* frame not decodable yet */
     }
+    const vig = vignetteAmountFor(rEffects);
+    if (vig > 0) this.drawVignette(g.wCss, g.hCss, vig);
     c.restore();
+  }
+
+  /** Darkens the clip box toward its edges (radial gradient) — the preview
+   *  approximation of ffmpeg's vignette. Drawn in the clip's transformed space. */
+  private drawVignette(boxW: number, boxH: number, amount: number) {
+    const c = this.ctx;
+    const outer = Math.hypot(boxW / 2, boxH / 2);
+    const grad = c.createRadialGradient(0, 0, outer * 0.35, 0, 0, outer);
+    grad.addColorStop(0, "rgba(0,0,0,0)");
+    grad.addColorStop(1, `rgba(0,0,0,${(amount * 0.9).toFixed(3)})`);
+    c.globalCompositeOperation = "source-over";
+    c.globalAlpha = 1;
+    c.filter = "none";
+    c.fillStyle = grad;
+    c.fillRect(-boxW / 2, -boxH / 2, boxW, boxH);
   }
 
   /** Draws only the kept sub-rectangle of `src` into the matching sub-region of
