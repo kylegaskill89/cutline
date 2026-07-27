@@ -540,8 +540,12 @@ export function compileExport(project: Project, opts: ExportOptions): string[] {
   ) {
     const rs = f3(opts.rangeStart);
     const re = f3(opts.rangeEnd);
-    chains.push(`[vout]trim=start=${rs}:end=${re},setpts=PTS-STARTPTS[voutR]`);
-    vLabel = "voutR";
+    // In frames mode the PNG sequence IS already just the range, so only the
+    // audio needs trimming; trimming the frames again would cut into empty time.
+    if (!frames) {
+      chains.push(`[vout]trim=start=${rs}:end=${re},setpts=PTS-STARTPTS[voutR]`);
+      vLabel = "voutR";
+    }
     aLabelsOut = aOuts.map((a) => {
       const r = `${a}R`;
       chains.push(`[${a}]atrim=start=${rs}:end=${re},asetpts=PTS-STARTPTS[${r}]`);

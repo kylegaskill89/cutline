@@ -131,6 +131,9 @@ export class Preview {
   /** Playback render-resolution factor (1 = Full, 0.5 = 1/2, 0.25 = 1/4).
    *  Applied only while playing; paused frames always render at full res. */
   playbackScale = 1;
+  /** While true (frame-accurate export capture) the backing store is exactly the
+   *  target size at 1:1 — no devicePixelRatio scaling, no playback downscale. */
+  private exportMode = false;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -159,7 +162,9 @@ export class Preview {
    * take effect on the next frame with no explicit re-wiring.
    */
   private applyBacking() {
-    const eff = (window.devicePixelRatio || 1) * (this.playing ? this.playbackScale : 1);
+    const eff = this.exportMode
+      ? 1 // export capture: 1:1 device pixels at the target size
+      : (window.devicePixelRatio || 1) * (this.playing ? this.playbackScale : 1);
     const w = Math.max(1, Math.round(this.cssW * eff));
     const h = Math.max(1, Math.round(this.cssH * eff));
     if (this.canvas.width !== w || this.canvas.height !== h) {
@@ -167,6 +172,123 @@ export class Preview {
       this.canvas.height = h;
     }
     this.ctx.setTransform(eff, 0, 0, eff, 0, 0);
+  }
+
+  private exportCanvas?: HTMLCanvasElement;
+
+  /**
+   * Frame-accurate export: composites the program at exactly `W`×`H` for the
+   * given timeline `time` and returns a PNG blob — the SAME compositor as the
+   * live preview, so export matches by construction. Seeks every active video
+   * source to its precise frame and awaits decode before drawing, so it is not
+   * real-time (this is the slow, deterministic path). Restores live state after.
+   */
+  async captureFrameBlob(project: Project, time: number, W: number, H: number): Promise<Blob> {
+    const saved = {
+      canvas: this.canvas,
+      ctx: this.ctx,
+      cssW: this.cssW,
+      cssH: this.cssH,
+      playhead: this.playhead,
+      project: this.project,
+      playing: this.playing,
+      overlaysHidden: this.overlaysHidden,
+    };
+    this.project = project;
+    this.playhead = time;
+    this.playing = false;
+    await this.prepareForExportFrame(time);
+    // Swap the draw target to a 1:1 offscreen at the export size.
+    const off = this.exportCanvas ?? (this.exportCanvas = document.createElement("canvas"));
+    off.width = W;
+    off.height = H;
+    this.canvas = off;
+    this.ctx = off.getContext("2d")!;
+    this.cssW = W;
+    this.cssH = H;
+    this.overlaysHidden = true;
+    this.exportMode = true;
+    try {
+      this.render();
+      return await new Promise<Blob>((resolve, reject) => {
+        off.toBlob((b) => (b ? resolve(b) : reject(new Error("toBlob failed"))), "image/png");
+      });
+    } finally {
+      this.exportMode = false;
+      this.canvas = saved.canvas;
+      this.ctx = saved.ctx;
+      this.cssW = saved.cssW;
+      this.cssH = saved.cssH;
+      this.playhead = saved.playhead;
+      this.project = saved.project;
+      this.playing = saved.playing;
+      this.overlaysHidden = saved.overlaysHidden;
+    }
+  }
+
+  /** Loads and precisely seeks every source active at `time`, awaiting decode. */
+  private async prepareForExportFrame(time: number): Promise<void> {
+    const waits: Promise<void>[] = [];
+    for (const { seg } of this.activeVideoSegments(time)) {
+      const clip = seg.clip;
+      const media = this.mediaOf(clip);
+      if (!media) continue;
+      if (isStillLike(media)) {
+        if (media.isImage) {
+          const img = this.acquireImage(media);
+          if (!img.complete || img.naturalWidth === 0) {
+            waits.push(
+              new Promise<void>((res) => {
+                img.addEventListener("load", () => res(), { once: true });
+                img.addEventListener("error", () => res(), { once: true });
+              }),
+            );
+          }
+        }
+        continue; // stills/text/matte/adjustment need no seek
+      }
+      const src = this.acquire(clip);
+      const srcTime = Math.min(
+        Math.max(seg.sourceIn, sourceTimeAt(clip, time)),
+        seg.sourceOut - 0.001,
+      );
+      waits.push(this.frameReady(src, srcTime));
+    }
+    await Promise.all(waits);
+  }
+
+  /** Resolves once a source element is loaded and seeked to `srcTime` (decoded).
+   *  A safety timeout prevents a stuck seek from hanging the whole export. */
+  private frameReady(src: Src, srcTime: number): Promise<void> {
+    return new Promise<void>((resolve) => {
+      const el = src.el;
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        el.removeEventListener("seeked", finish);
+        clearTimeout(timer);
+        resolve();
+      };
+      const timer = setTimeout(finish, 4000);
+      const seek = () => {
+        if (el.readyState < 1) {
+          el.addEventListener("loadeddata", seek, { once: true });
+          return;
+        }
+        if (Math.abs(el.currentTime - srcTime) < 1e-3 && el.readyState >= 2) {
+          finish();
+          return;
+        }
+        el.addEventListener("seeked", finish);
+        try {
+          el.currentTime = srcTime;
+        } catch {
+          finish();
+        }
+      };
+      seek();
+    });
   }
 
   // ---- projection (project px <-> css px, letterboxed) ----

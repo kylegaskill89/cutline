@@ -748,6 +748,12 @@ function tick() {
   const dt = Math.min(0.1, (now - lastTickTs) / 1000);
   lastTickTs = now;
 
+  if (exporting) {
+    // Frame-accurate capture owns the compositor right now; don't render over it.
+    requestAnimationFrame(tick);
+    return;
+  }
+
   if (shuttleRate !== 0) {
     const end = timelineDuration(project);
     let np = playhead + shuttleRate * dt;
@@ -968,9 +974,19 @@ expConfirm.addEventListener("click", () => {
   const codec = expCodec.value as "h264" | "h265";
   const quality = expQuality.value as "high" | "balanced" | "small";
   const audioMode = expAudio.value as "mix" | "separate";
+  const frameAccurate = expFrameAccurate.checked;
   exportModal.classList.add("hidden");
-  void doExport({ width, height, fps: fps > 0 ? fps : 30, codec, crf: CRF[codec][quality], audioMode });
+  void doExport({
+    width,
+    height,
+    fps: fps > 0 ? fps : 30,
+    codec,
+    crf: CRF[codec][quality],
+    audioMode,
+    frameAccurate,
+  });
 });
+const expFrameAccurate = $<HTMLInputElement>("expFrameAccurate");
 
 /** Renders a text clip to a full-frame (W×H) transparent PNG with its transform
  *  baked in — same drawing code as the preview, so the export matches. */
@@ -1063,6 +1079,8 @@ async function buildExportProject(W: number, H: number): Promise<Project> {
   return out;
 }
 
+let exporting = false; // pauses the tick loop's preview render during frame capture
+
 async function doExport(o: {
   width: number;
   height: number;
@@ -1070,6 +1088,7 @@ async function doExport(o: {
   codec: "h264" | "h265";
   crf: number;
   audioMode: "mix" | "separate";
+  frameAccurate: boolean;
 }) {
   // Export the In/Out range if set, else the whole sequence.
   const seqDur = timelineDuration(project);
@@ -1090,49 +1109,87 @@ async function doExport(o: {
     playBtn.textContent = "Play";
   }
 
-  // Show the progress overlay immediately so there's feedback while we build
-  // the filter graph and wait for ffmpeg's first `time=` line (which can lag
-  // by several seconds on complex compositions).
   showExportProgress("Preparing composition…");
   exportBtn.disabled = true;
   importBtn.disabled = true;
   let cancelled = false;
+  let run: { done: Promise<number>; cancel: () => void } | null = null;
+  let framesDir: string | null = null;
+  expProgCancel.onclick = () => {
+    cancelled = true;
+    setExportStatus("Cancelling…");
+    run?.cancel();
+  };
 
   try {
-    const exportProject = await buildExportProject(o.width, o.height);
-    const args = compileExport(exportProject, {
-      outputFile: outPath,
-      width: o.width,
-      height: o.height,
-      fps: o.fps,
-      videoCodec: o.codec,
-      crf: o.crf,
-      rangeStart,
-      rangeEnd,
-      audioMode: o.audioMode,
-    });
+    let args: string[];
+    if (o.frameAccurate) {
+      // Render every output frame through the preview compositor at full res and
+      // stage it as a PNG, then hand the sequence to ffmpeg (which adds audio).
+      const start = rangeStart ?? 0;
+      const end = rangeEnd ?? seqDur;
+      const nFrames = Math.max(1, Math.round((end - start) * o.fps));
+      framesDir = await invoke<string>("make_temp_dir", { name: `frames_${Date.now()}` });
+      exporting = true; // stop the live tick from fighting for the compositor
+      setExportStatus(`Rendering 0 / ${nFrames} frames…`);
+      setExportProgress(0);
+      for (let i = 0; i < nFrames; i++) {
+        if (cancelled) break;
+        const t = Math.min(end - 1e-4, start + i / o.fps);
+        const blob = await preview.captureFrameBlob(project, t, o.width, o.height);
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        const name = `frame_${String(i + 1).padStart(6, "0")}.png`;
+        await invoke("write_binary_file", { path: `${framesDir}/${name}`, data: Array.from(bytes) });
+        // Frame rendering is the first 60% of the bar; encoding is the rest.
+        setExportProgress(((i + 1) / nFrames) * 60);
+        if (i % 5 === 0 || i === nFrames - 1) {
+          setExportStatus(`Rendering ${i + 1} / ${nFrames} frames…`);
+        }
+      }
+      exporting = false;
+      if (cancelled) throw new Error("cancelled");
+      args = compileExport(project, {
+        outputFile: outPath,
+        width: o.width,
+        height: o.height,
+        fps: o.fps,
+        videoCodec: o.codec,
+        crf: o.crf,
+        rangeStart,
+        rangeEnd,
+        audioMode: o.audioMode,
+        videoFromFrames: { dir: framesDir, pattern: "frame_%06d.png" },
+      });
+    } else {
+      const exportProject = await buildExportProject(o.width, o.height);
+      args = compileExport(exportProject, {
+        outputFile: outPath,
+        width: o.width,
+        height: o.height,
+        fps: o.fps,
+        videoCodec: o.codec,
+        crf: o.crf,
+        rangeStart,
+        rangeEnd,
+        audioMode: o.audioMode,
+      });
+    }
 
-    setExportStatus("Starting ffmpeg…");
+    setExportStatus(o.frameAccurate ? "Encoding…" : "Starting ffmpeg…");
     let started = false;
-    const run = runFfmpeg(args, (sec) => {
+    const base = o.frameAccurate ? 60 : 0; // frame render already filled 0–60%
+    const span = 100 - base;
+    run = runFfmpeg(args, (sec) => {
       if (!started) {
         started = true;
         setExportStatus("Encoding…");
       }
-      const pct = Math.min(100, (sec / total) * 100);
-      setExportProgress(pct);
+      setExportProgress(Math.min(100, base + (sec / total) * span));
     });
-
-    expProgCancel.onclick = () => {
-      cancelled = true;
-      setExportStatus("Cancelling…");
-      run.cancel();
-    };
 
     const code = await run.done;
     hideExportProgress();
     if (cancelled) {
-      // ffmpeg was killed — leave the (partial) file, just report it.
       await message("Export cancelled.", { title: "Export cancelled" });
     } else if (code === 0) {
       await message(`Saved to:\n${outPath}`, { title: "Export complete" });
@@ -1141,8 +1198,11 @@ async function doExport(o: {
     }
   } catch (e) {
     hideExportProgress();
-    if (!cancelled) await message(`Export error: ${e}`, { title: "Export failed", kind: "error" });
+    if (cancelled) await message("Export cancelled.", { title: "Export cancelled" });
+    else await message(`Export error: ${e}`, { title: "Export failed", kind: "error" });
   } finally {
+    exporting = false;
+    if (framesDir) void invoke("remove_dir", { path: framesDir }).catch(() => {});
     exportBtn.disabled = false;
     importBtn.disabled = false;
     exportBtn.textContent = "Export";

@@ -669,6 +669,18 @@ input[type="range"] {
   margin-top: 2px;
   line-height: 1.4;
 }
+.field-check {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 8px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.field-check input {
+  margin-top: 2px;
+  accent-color: var(--accent);
+  flex: 0 0 auto;
+}
 .modal-actions {
   display: flex;
   justify-content: flex-end;

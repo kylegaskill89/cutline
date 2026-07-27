@@ -32,6 +32,28 @@ fn read_text_file(path: String) -> Result<String, String> {
     std::fs::read_to_string(&path).map_err(|e| e.to_string())
 }
 
+/// Creates (and returns the path of) a subdirectory under the per-app temp dir.
+/// Used by frame-accurate export to stage the rendered PNG sequence.
+#[tauri::command]
+fn make_temp_dir(name: String) -> Result<String, String> {
+    let mut dir = std::env::temp_dir();
+    dir.push("cutline");
+    dir.push(name);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir.to_string_lossy().to_string())
+}
+
+/// Recursively removes a directory (best-effort cleanup of staged frames).
+/// Ignores a missing directory so double-cleanup is harmless.
+#[tauri::command]
+fn remove_dir(path: String) -> Result<(), String> {
+    match std::fs::remove_dir_all(&path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default()
@@ -52,7 +74,9 @@ pub fn run() {
             write_temp_file,
             write_text_file,
             write_binary_file,
-            read_text_file
+            read_text_file,
+            make_temp_dir,
+            remove_dir
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
