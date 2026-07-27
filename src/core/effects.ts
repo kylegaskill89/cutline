@@ -177,6 +177,37 @@ export const EFFECTS: EffectDef[] = [
       return `chromakey=${hex}:${sim.toFixed(3)}:${bl.toFixed(3)}`;
     },
   },
+  {
+    // Crop: cuts a fraction off each edge, keeping the frame size (cropped edges
+    // become transparent, revealing lower tracks / black on a plain track). Not a
+    // CSS filter — the preview draws the kept sub-rectangle (see cropFractionsFor);
+    // export crops then pads back to the original size at the same offset.
+    id: "crop",
+    label: "Crop",
+    params: [
+      { key: "left", label: "Left", min: 0, max: 45, def: 0, step: 1, unit: "%" },
+      { key: "top", label: "Top", min: 0, max: 45, def: 0, step: 1, unit: "%" },
+      { key: "right", label: "Right", min: 0, max: 45, def: 0, step: 1, unit: "%" },
+      { key: "bottom", label: "Bottom", min: 0, max: 45, def: 0, step: 1, unit: "%" },
+    ],
+    css: () => "",
+    ffmpeg: (p) => {
+      const l = getP(p, "left", 0) / 100;
+      const t = getP(p, "top", 0) / 100;
+      const r = getP(p, "right", 0) / 100;
+      const b = getP(p, "bottom", 0) / 100;
+      if (l <= 0 && t <= 0 && r <= 0 && b <= 0) return "";
+      const rw = Math.max(0.01, 1 - l - r);
+      const rh = Math.max(0.01, 1 - t - b);
+      const f = (n: number) => n.toFixed(4);
+      // Keep the frame size: crop to the kept region, then pad back to the
+      // original dimensions (iw/rw × ih/rh) at the original edge offset.
+      return (
+        `crop=iw*${f(rw)}:ih*${f(rh)}:iw*${f(l)}:ih*${f(t)},` +
+        `pad=iw/${f(rw)}:ih/${f(rh)}:iw*${f(l)}/${f(rw)}:ih*${f(t)}/${f(rh)}:color=black@0.0`
+      );
+    },
+  },
 ];
 
 const BY_ID = new Map(EFFECTS.map((e) => [e.id, e]));
@@ -266,6 +297,32 @@ export function ffmpegAdjustChain(
     if (frag) parts.push(`${frag}:${gate}`);
   }
   return parts.join(",");
+}
+
+/**
+ * Kept-region fractions (0..1) from an enabled Crop effect: how much to keep
+ * after cutting `l`/`t`/`r`/`b` off each edge. The preview draws the source's
+ * kept sub-rectangle into the matching sub-region of the clip box. All zero
+ * (no crop) when there's no crop effect.
+ */
+export function cropFractionsFor(effects: ClipEffect[] | undefined): {
+  l: number;
+  t: number;
+  r: number;
+  b: number;
+} {
+  const zero = { l: 0, t: 0, r: 0, b: 0 };
+  if (!effects) return zero;
+  for (const e of enabled(effects)) {
+    if (e.type !== "crop") continue;
+    return {
+      l: Math.max(0, (e.params.left ?? 0) / 100),
+      t: Math.max(0, (e.params.top ?? 0) / 100),
+      r: Math.max(0, (e.params.right ?? 0) / 100),
+      b: Math.max(0, (e.params.bottom ?? 0) / 100),
+    };
+  }
+  return zero;
 }
 
 /**

@@ -9,6 +9,7 @@ import {
   ffmpegChainFor,
   ffmpegAdjustChain,
   flipFactorsFor,
+  cropFractionsFor,
 } from "../effects.ts";
 import type { ClipEffect } from "../project.ts";
 
@@ -23,6 +24,7 @@ const NEUTRAL: Record<string, Record<string, number>> = {
   grayscale: { amount: 0 },
   invert: { on: 0 },
   flip: { horizontal: 0, vertical: 0 },
+  crop: { left: 0, top: 0, right: 0, bottom: 0 },
 };
 
 test("every colour/blur effect emits nothing at its neutral params", () => {
@@ -82,6 +84,35 @@ test("Black & White is active at its default (adds full desaturation)", () => {
   const p = defaultParams("grayscale");
   assert.equal(effectDef("grayscale")!.css(p, {}), "grayscale(1.000)");
   assert.equal(effectDef("grayscale")!.ffmpeg(p, {}), "hue=s=0.000");
+});
+
+test("crop: neutral at 0, else crops the kept region and pads back to size", () => {
+  const def = effectDef("crop")!;
+  assert.equal(def.css({ left: 0, top: 0, right: 0, bottom: 0 }, {}), "");
+  assert.equal(def.ffmpeg({ left: 0, top: 0, right: 0, bottom: 0 }, {}), "");
+  // Cut 10% left + 20% right → keep 70% width; 10% top → keep 90% height.
+  const s = def.ffmpeg({ left: 10, top: 10, right: 20, bottom: 0 }, {});
+  assert.equal(
+    s,
+    "crop=iw*0.7000:ih*0.9000:iw*0.1000:ih*0.1000," +
+      "pad=iw/0.7000:ih/0.9000:iw*0.1000/0.7000:ih*0.1000/0.9000:color=black@0.0",
+  );
+});
+
+test("cropFractionsFor reads the enabled crop effect's kept fractions", () => {
+  assert.deepEqual(cropFractionsFor([{ type: "crop", params: { left: 25, top: 0, right: 25, bottom: 10 } }]), {
+    l: 0.25,
+    t: 0,
+    r: 0.25,
+    b: 0.1,
+  });
+  assert.deepEqual(cropFractionsFor([{ type: "crop", enabled: false, params: { left: 25 } }]), {
+    l: 0,
+    t: 0,
+    r: 0,
+    b: 0,
+  });
+  assert.deepEqual(cropFractionsFor(undefined), { l: 0, t: 0, r: 0, b: 0 });
 });
 
 test("brightness emits matching css and ffmpeg fragments", () => {

@@ -30,7 +30,7 @@ import {
   type VideoSeg,
   type BlendMode,
 } from "../core/project.ts";
-import { cssFilterFor, flipFactorsFor } from "../core/effects.ts";
+import { cssFilterFor, flipFactorsFor, cropFractionsFor } from "../core/effects.ts";
 import { ChromaKeyer, sourceDims } from "./chromaKey.ts";
 import { matteFill } from "./matteRender.ts";
 import { layoutText, drawTextCentred } from "./textRender.ts";
@@ -863,12 +863,46 @@ export class Preview {
     c.rotate(g.rad);
     const flip = flipFactorsFor(rEffects);
     if (flip.sx !== 1 || flip.sy !== 1) c.scale(flip.sx, flip.sy);
+    const crop = cropFractionsFor(rEffects);
     try {
-      c.drawImage(draw, -g.wCss / 2, -g.hCss / 2, g.wCss, g.hCss);
+      if (crop.l || crop.t || crop.r || crop.b) {
+        this.drawCropped(draw, g.wCss, g.hCss, crop);
+      } else {
+        c.drawImage(draw, -g.wCss / 2, -g.hCss / 2, g.wCss, g.hCss);
+      }
     } catch {
       /* frame not decodable yet */
     }
     c.restore();
+  }
+
+  /** Draws only the kept sub-rectangle of `src` into the matching sub-region of
+   *  the clip box (the cropped edges stay transparent). Matches the export's
+   *  crop+pad. */
+  private drawCropped(
+    src: CanvasImageSource,
+    boxW: number,
+    boxH: number,
+    crop: { l: number; t: number; r: number; b: number },
+  ) {
+    const dim = sourceDims(src);
+    if (!dim) {
+      this.ctx.drawImage(src, -boxW / 2, -boxH / 2, boxW, boxH);
+      return;
+    }
+    const kw = Math.max(0, 1 - crop.l - crop.r);
+    const kh = Math.max(0, 1 - crop.t - crop.b);
+    this.ctx.drawImage(
+      src,
+      crop.l * dim.w, // source x
+      crop.t * dim.h, // source y
+      kw * dim.w, // source w
+      kh * dim.h, // source h
+      -boxW / 2 + crop.l * boxW, // dest x
+      -boxH / 2 + crop.t * boxH, // dest y
+      kw * boxW, // dest w
+      kh * boxH, // dest h
+    );
   }
 
   private fxCanvas?: HTMLCanvasElement;
