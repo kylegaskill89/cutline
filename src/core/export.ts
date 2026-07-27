@@ -59,6 +59,14 @@ export interface ExportOptions {
    * "separate": each timeline audio track becomes its own output audio stream.
    */
   audioMode?: "mix" | "separate";
+  /**
+   * Frame-accurate mode: instead of compiling a video filter graph, use a
+   * pre-rendered PNG image sequence (rendered by the preview compositor at full
+   * resolution) as the video source. `pattern` is an ffmpeg image-sequence
+   * pattern, e.g. `frame_%06d.png`, resolved under `dir`. The audio pipeline is
+   * built exactly as normal, so preview and export match by construction.
+   */
+  videoFromFrames?: { dir: string; pattern: string };
 }
 
 const EPS = 1e-4;
@@ -169,19 +177,31 @@ export function compileExport(project: Project, opts: ExportOptions): string[] {
     (t) => t.kind === "audio" && isTrackAudible(project, t),
   );
 
+  // Frame-accurate mode: the video is a pre-rendered PNG sequence, so the whole
+  // image/video filter graph is bypassed. The media inputs above still provide
+  // the AUDIO streams, and one extra input feeds the frames.
+  const frames = opts.videoFromFrames;
+  let framesInputIdx = -1;
+  if (frames) {
+    framesInputIdx = inputs.length;
+    inputs.push({ path: `${frames.dir}/${frames.pattern}`, pre: ["-framerate", String(FPS)] });
+  }
+
   // A looped image input spans the timeline; the overlay's `enable` gates when
-  // it's visible and `trim` bounds the frames produced.
-  for (const track of videoTracks) {
-    for (const clip of track.clips) {
-      if (!clipEnabled(clip) || !isImageMedia(clip.mediaId)) continue;
-      const m = project.media.find((mm) => mm.id === clip.mediaId)!;
-      imageClipInput.set(clip.id, inputs.length);
-      // A still loops via -loop 1; an animated GIF loops its frames via
-      // -ignore_loop 0 (keeping its own frame timing).
-      const pre = m.isAnimated
-        ? ["-ignore_loop", "0", "-t", f3(Math.max(total, EPS))]
-        : ["-loop", "1", "-t", f3(Math.max(total, EPS)), "-framerate", String(FPS)];
-      inputs.push({ path: m.path, pre });
+  // it's visible and `trim` bounds the frames produced. (Skipped in frame mode.)
+  if (!frames) {
+    for (const track of videoTracks) {
+      for (const clip of track.clips) {
+        if (!clipEnabled(clip) || !isImageMedia(clip.mediaId)) continue;
+        const m = project.media.find((mm) => mm.id === clip.mediaId)!;
+        imageClipInput.set(clip.id, inputs.length);
+        // A still loops via -loop 1; an animated GIF loops its frames via
+        // -ignore_loop 0 (keeping its own frame timing).
+        const pre = m.isAnimated
+          ? ["-ignore_loop", "0", "-t", f3(Math.max(total, EPS))]
+          : ["-loop", "1", "-t", f3(Math.max(total, EPS)), "-framerate", String(FPS)];
+        inputs.push({ path: m.path, pre });
+      }
     }
   }
 
@@ -380,7 +400,11 @@ export function compileExport(project: Project, opts: ExportOptions): string[] {
     const m = project.media.find((mm) => mm.id === mediaId);
     return m ? (m.isImage || m.isText ? Infinity : m.duration) : Infinity;
   };
-  if (
+  if (frames) {
+    // Frame-accurate: the PNG sequence IS the composited video. Just normalise
+    // the pixel format / SAR to the output. (Frames are rendered at W×H.)
+    chains.push(`[${framesInputIdx}:v]fps=${FPS},format=yuv420p,setsar=1[vout]`);
+  } else if (
     tracksWithClips.length <= 1 &&
     !anyTransform &&
     !anyImage &&

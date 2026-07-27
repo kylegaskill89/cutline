@@ -189,6 +189,26 @@ test("each audio clip is delayed to its start and mixed", () => {
   assert.match(g, /amix=inputs=2:duration=longest:normalize=0/);
 });
 
+test("frame-accurate mode uses a PNG sequence for video, keeps the audio graph", () => {
+  const p = loaded(); // 1 video clip + 2 audio streams
+  const args = compileExport(p, {
+    ...opts,
+    videoFromFrames: { dir: "/tmp/frames", pattern: "f_%06d.png" },
+  });
+  // The frames input is present as an image sequence with an explicit framerate.
+  const i = args.indexOf("/tmp/frames/f_%06d.png");
+  assert.ok(i > 0, "frames input path present");
+  assert.equal(args[i - 1], "-i");
+  assert.equal(args[i - 3], "-framerate");
+  const g = graphOf(args);
+  // Video is taken straight from the frames input — no concat/overlay graph.
+  assert.match(g, /:v\]fps=30,format=yuv420p,setsar=1\[vout\]/);
+  assert.doesNotMatch(g, /concat=|overlay=/);
+  // Audio pipeline is unchanged (both streams delayed + mixed).
+  assert.match(g, /adelay=0:all=1/);
+  assert.match(g, /\[aout\]/);
+});
+
 test("audio effects splice into the per-clip audio chain before resample", () => {
   let p = loaded();
   const a = p.tracks.find((t) => t.kind === "audio")!.clips[0];
