@@ -107,8 +107,11 @@ thin.** Every subsystem is a function of the data model.
 - Transform (position, scale per-axis, rotation), opacity, blend modes.
 - Fades (in/out) for video (alpha) and audio (gain).
 - **Constant speed** (0.05×–100×, pitch-preserving audio) + **reverse**.
-- **Keyframes** on transform + opacity (linear interp), with on-canvas + timeline
-  editing and a stopwatch UI.
+- **Keyframes** on transform + opacity, with on-canvas + timeline editing and a
+  stopwatch UI. **Interpolation modes** per property — Linear / Hold / Ease
+  (smoothstep) — via a cycle chip beside each stopwatch (also on effect params).
+  Honoured by preview and the sampled export bake automatically. (Gain/volume
+  keyframes are still linear-only — UI follow-up.)
 
 **Visual effects** (registry; preview↔export parity by construction)
 - Brightness, Contrast, Saturation, Hue, Gaussian Blur, Black & White, Invert,
@@ -173,7 +176,10 @@ or audio-validate ffmpeg output in the dev environment).
    compressor parity.
 5. **Nested sequences / compound clips** — very large; a sequence usable as a clip.
 6. **More scopes / false-colour, zebra**; scope options (parade RGB/YUV, etc.).
-7. **Polish backlog:** text/color-matte clips still use `c.filter` directly (minor
+7. **Keyframe easing UI for gain/volume** — the core `evalKeyframes` already
+   supports per-keyframe interp on any keyframe list; only the gain rubber-band
+   lacks a UI to set it (transform/opacity/effect params have the cycle chip).
+8. **Polish backlog:** text/color-matte clips still use `c.filter` directly (minor
    softening on HiDPI for those specific generators — video is already fixed);
    Gaussian blur radius is now in device px (slightly resolution-dependent).
 
