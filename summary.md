@@ -148,6 +148,12 @@ thin.** Every subsystem is a function of the data model.
 **Export**
 - H.264 / H.265, CRF, canvas presets (1080p/1440p/4K/ultrawide/vertical/square/
   custom), fps; optional In/Out range; progress overlay with cancel.
+- **Frame-accurate export (beta, opt-in):** renders every output frame through
+  the preview compositor at full resolution (seeking each source to its exact
+  frame, awaiting decode), stages a PNG sequence (`make_temp_dir` +
+  `write_binary_file`), then muxes with the normal audio graph via the
+  `videoFromFrames` compiler path. Perfect preview↔export parity, but slow and
+  disk-heavy → best for short ranges. The fast filter-graph export stays default.
 
 **Platform**
 - Auto-updater; branded (name "Cutline", scissors icon); "Check for Updates".
@@ -160,12 +166,14 @@ Ordered roughly by value/priority. **The big ones need real-build validation**
 (the human tester runs `npm run tauri dev` / real exports — the agent cannot pixel-
 or audio-validate ffmpeg output in the dev environment).
 
-1. **Frame-accurate export renderer (Phase 3 — the strategic unlock).** Pipe the
-   preview canvas frames → ffmpeg stdin. Enables crop, shape masks, vignette, and
-   the Wipe transition with *perfect* preview↔export parity, and retires the
-   "ffmpeg parity is approximate" caveat hanging over effects. Requires Rust
-   stdin-streaming / muxing that must be validated against real builds — do it
-   incrementally with the tester, not blind.
+1. **Frame-accurate export renderer — SHIPPED (beta, opt-in).** Done via a
+   PNG-sequence approach (render frames → stage → mux), NOT ffmpeg stdin
+   streaming (avoided the risky Rust). See Export above. Remaining follow-ups:
+   perf (IPC per-frame uses `Array.from` — could pass raw bytes; consider
+   parallel/throttled rendering), GIF frames aren't precisely time-sampled in
+   capture, and now that preview==export is achievable, **crop / shape masks /
+   vignette / Wipe** become tractable (they only need to render in the preview
+   compositor, then frame-accurate export carries them exactly).
 2. **Speed ramping** — keyframed (variable) speed, as opposed to the shipped
    constant speed. Large: nonlinear duration, audio, timeline layout, keyframe
    time remapping.
