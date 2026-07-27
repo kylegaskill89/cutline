@@ -115,7 +115,10 @@ thin.** Every subsystem is a function of the data model.
 
 **Visual effects** (registry; preview↔export parity by construction)
 - Brightness, Contrast, Saturation, Hue, Gaussian Blur, Black & White, Invert,
-  Flip (H/V), **Chroma Key**.
+  Flip (H/V), **Chroma Key**, **Crop**, **Vignette**.
+- Crop/Vignette run on the FAST ffmpeg path (not the slow frame-accurate
+  renderer): crop = self-contained `crop`+`pad` fragment (transparent edges);
+  vignette = ffmpeg `vignette` (preview approximates with a radial gradient).
 - Effect params are **keyframeable**. Effects stack with **reorder / enable-disable
   / copy-paste between clips / clear**.
 - **Adjustment layers** — a clip whose effect stack filters everything on the
@@ -166,14 +169,22 @@ Ordered roughly by value/priority. **The big ones need real-build validation**
 (the human tester runs `npm run tauri dev` / real exports — the agent cannot pixel-
 or audio-validate ffmpeg output in the dev environment).
 
-1. **Frame-accurate export renderer — SHIPPED (beta, opt-in).** Done via a
-   PNG-sequence approach (render frames → stage → mux), NOT ffmpeg stdin
-   streaming (avoided the risky Rust). See Export above. Remaining follow-ups:
-   perf (IPC per-frame uses `Array.from` — could pass raw bytes; consider
-   parallel/throttled rendering), GIF frames aren't precisely time-sampled in
-   capture, and now that preview==export is achievable, **crop / shape masks /
-   vignette / Wipe** become tractable (they only need to render in the preview
-   compositor, then frame-accurate export carries them exactly).
+0. **STRATEGIC DIRECTION (2026-07-26):** The user plans to eventually **rewrite
+   the app natively** (C++/C#/…), because the browser `<video>` element is a poor
+   frame-accurate export decoder — frame-accurate export took ~18 min for an 8s
+   4K MKV clip (~4.5s/frame; WebView2 re-decodes MKV from a keyframe on every
+   seek). Until then: **reach feature-complete on the current Tauri stack, and do
+   effect work on the FAST ffmpeg path** rather than the slow frame-accurate
+   renderer. So crop/vignette/mask/wipe are being implemented as ffmpeg filters
+   (native speed), NOT via the frame renderer. The frame-accurate renderer stays
+   as a rarely-needed fallback; don't invest more in its speed.
+1. **Frame-accurate export renderer — SHIPPED (beta, opt-in) but DEPRIORITIZED**
+   (slow by nature; see item 0). PNG-sequence approach (render → stage → mux),
+   raw-byte IPC + write pipelining applied. Fallback only.
+   **Remaining ffmpeg-path effects:** Crop + Vignette DONE (fast path). TODO:
+   **shape masks** (alpha via `overlay`/`geq`) and **Wipe transition** (needs a
+   moving reveal mask; ffmpeg `xfade=transition=wipe*` is the likely route, but
+   the existing transitions deliberately avoid xfade — decide per-case).
 2. **Speed ramping** — keyframed (variable) speed, as opposed to the shipped
    constant speed. Large: nonlinear duration, audio, timeline layout, keyframe
    time remapping.
