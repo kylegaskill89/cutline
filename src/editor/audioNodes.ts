@@ -51,6 +51,28 @@ function makeNode(ctx: AudioContext, type: string, p: Record<string, number>): A
       n.release.value = 0.15;
       return n;
     }
+    case "eqband": {
+      if (p.gain === 0) return null;
+      const n = ctx.createBiquadFilter();
+      n.type = "peaking";
+      n.frequency.value = p.freq;
+      n.Q.value = p.q;
+      n.gain.value = p.gain;
+      return n;
+    }
+    case "notch": {
+      const n = ctx.createBiquadFilter();
+      n.type = "notch";
+      n.frequency.value = p.freq;
+      n.Q.value = p.q;
+      return n;
+    }
+    case "gain": {
+      if (p.gain === 0) return null;
+      const n = ctx.createGain();
+      n.gain.value = Math.pow(10, p.gain / 20); // dB → linear
+      return n;
+    }
     default:
       return null;
   }

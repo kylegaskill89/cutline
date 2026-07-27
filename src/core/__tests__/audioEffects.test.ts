@@ -36,6 +36,22 @@ test("compressor is a no-op at ratio 1 and converts threshold dB to linear", () 
   assert.equal(s, "acompressor=threshold=0.10000:ratio=4.0");
 });
 
+test("EQ band is neutral at 0 dB and emits a peaking equalizer otherwise", () => {
+  const def = audioEffectDef("eqband")!;
+  assert.equal(def.ffmpeg({ freq: 1000, gain: 0, q: 1 }), "");
+  assert.equal(def.ffmpeg({ freq: 2500, gain: 6, q: 1.5 }), "equalizer=f=2500:t=q:w=1.50:g=6.0");
+});
+
+test("notch always emits a band-reject at its frequency/Q", () => {
+  assert.equal(audioEffectDef("notch")!.ffmpeg({ freq: 60, q: 8 }), "bandreject=f=60:t=q:w=8.00");
+});
+
+test("gain is neutral at 0 dB and emits a dB volume otherwise", () => {
+  const def = audioEffectDef("gain")!;
+  assert.equal(def.ffmpeg({ gain: 0 }), "");
+  assert.equal(def.ffmpeg({ gain: -3 }), "volume=-3.0dB");
+});
+
 test("audioDefaultParams fills every param key", () => {
   assert.deepEqual(audioDefaultParams("compressor"), { threshold: -18, ratio: 4 });
   assert.deepEqual(audioDefaultParams("nope"), {});

@@ -77,6 +77,37 @@ export const AUDIO_EFFECTS: AudioEffectDef[] = [
       return `acompressor=threshold=${thr.toFixed(5)}:ratio=${p.ratio.toFixed(1)}`;
     },
   },
+  {
+    id: "eqband",
+    name: "EQ Band",
+    params: [
+      { key: "freq", label: "Frequency", min: 20, max: 20000, step: 10, def: 1000, unit: "Hz" },
+      { key: "gain", label: "Gain", min: -24, max: 24, step: 1, def: 0, unit: "dB" },
+      { key: "q", label: "Q", min: 0.1, max: 10, step: 0.1, def: 1 },
+    ],
+    // Peaking filter — exact parity: Web Audio "peaking" biquad ↔ ffmpeg equalizer.
+    ffmpeg: (p) =>
+      p.gain === 0
+        ? ""
+        : `equalizer=f=${Math.round(p.freq)}:t=q:w=${p.q.toFixed(2)}:g=${p.gain.toFixed(1)}`,
+  },
+  {
+    id: "notch",
+    name: "Notch",
+    params: [
+      { key: "freq", label: "Frequency", min: 20, max: 20000, step: 10, def: 1000, unit: "Hz" },
+      { key: "q", label: "Q", min: 0.1, max: 20, step: 0.1, def: 4 },
+    ],
+    // Band-reject — Web Audio "notch" biquad ↔ ffmpeg bandreject (width type q).
+    ffmpeg: (p) => `bandreject=f=${Math.round(p.freq)}:t=q:w=${p.q.toFixed(2)}`,
+  },
+  {
+    id: "gain",
+    name: "Gain",
+    params: [{ key: "gain", label: "Gain", min: -24, max: 24, step: 0.5, def: 0, unit: "dB" }],
+    // Simple amplify — Web Audio GainNode ↔ ffmpeg volume (dB). Stacks with clip volume.
+    ffmpeg: (p) => (p.gain === 0 ? "" : `volume=${p.gain.toFixed(1)}dB`),
+  },
 ];
 
 export function audioEffectDef(id: string): AudioEffectDef | undefined {
