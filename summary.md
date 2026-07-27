@@ -124,9 +124,9 @@ thin.** Every subsystem is a function of the data model.
 **Audio**
 - Per-clip volume; **volume automation** (rubber-band gain keyframes on the
   timeline); master volume; VU meter.
-- **Audio effects** (registry): High-Pass, Low-Pass, Bass, Treble, Compressor.
-  Web Audio in preview ↔ ffmpeg filters on export (close parity; compressor
-  approximate).
+- **Audio effects** (registry): High-Pass, Low-Pass, Bass, Treble, Compressor,
+  **EQ Band (peaking), Notch, Gain**. Web Audio in preview ↔ ffmpeg filters on
+  export (close parity; compressor approximate; the biquad-based ones are exact).
 - Track mute/solo; export audio as mixed or separate-per-track streams.
 
 **Generators**
@@ -172,8 +172,11 @@ or audio-validate ffmpeg output in the dev environment).
 3. **Wipe transition** — needs a growing reveal **mask/crop** the current
    keyframe-bake path can't carry (it only bakes position/scale/rotation).
    Cleanly doable once the frame-accurate renderer exists.
-4. **Audio effects, phase 2** — parametric EQ, de-esser, noise reduction; tighten
-   compressor parity.
+4. **Audio effects, phase 2** — _EQ Band / Notch / Gain shipped._ Remaining:
+   de-esser, noise reduction; tighten compressor parity. NOTE: gain/volume
+   keyframe easing needs the audio scheduler (`scheduleGainEnvelope`) and export
+   `gainExpr` to sub-sample eased segments (they currently ramp linearly between
+   breakpoints) — not just a UI chip.
 5. **Nested sequences / compound clips** — very large; a sequence usable as a clip.
 6. **More scopes / false-colour, zebra**; scope options (parade RGB/YUV, etc.).
 7. **Keyframe easing UI for gain/volume** — the core `evalKeyframes` already
